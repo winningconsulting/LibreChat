@@ -119,6 +119,38 @@ describe('stripCodeChallenge', () => {
     expect(req.originalUrl).toBe('/oauth/openid');
     expect(req.url).toBe('/oauth/openid');
   });
+
+  it('removes redirect_uri from query and URLs (admin panel SSO)', () => {
+    const redirectUri = encodeURIComponent('http://localhost:3000/auth/openid/callback');
+    const req = makeReq({
+      query: { redirect_uri: 'http://localhost:3000/auth/openid/callback' },
+      originalUrl: `/api/admin/oauth/openid?redirect_uri=${redirectUri}`,
+      url: `/oauth/openid?redirect_uri=${redirectUri}`,
+    });
+
+    stripCodeChallenge(req);
+
+    expect(req.query.redirect_uri).toBeUndefined();
+    expect(req.originalUrl).toBe('/api/admin/oauth/openid');
+    expect(req.url).toBe('/oauth/openid');
+  });
+
+  it('removes both code_challenge and redirect_uri', () => {
+    const challenge = 'a'.repeat(64);
+    const redirectUri = encodeURIComponent('http://localhost:3000/auth/openid/callback');
+    const req = makeReq({
+      query: { code_challenge: challenge, redirect_uri: 'http://localhost:3000/auth/openid/callback' },
+      originalUrl: `/api/admin/oauth/openid?code_challenge=${challenge}&redirect_uri=${redirectUri}`,
+      url: `/oauth/openid?code_challenge=${challenge}&redirect_uri=${redirectUri}`,
+    });
+
+    stripCodeChallenge(req);
+
+    expect(req.query.code_challenge).toBeUndefined();
+    expect(req.query.redirect_uri).toBeUndefined();
+    expect(req.originalUrl).toBe('/api/admin/oauth/openid');
+    expect(req.url).toBe('/oauth/openid');
+  });
 });
 
 describe('storeAndStripChallenge', () => {

@@ -106,6 +106,23 @@ function generateState() {
 }
 
 /**
+ * Strip `redirect_uri` before Passport openid-client runs. The admin panel sends
+ * this for its own callback URL; if it remains on the URL, openid-client v6
+ * treats GET /api/admin/oauth/openid as an OAuth callback and returns 401.
+ * (@librechat/api storeAndStripChallenge also strips this once packages/api is rebuilt.)
+ */
+function stripAdminPanelRedirectUriQuery(req) {
+  delete req.query.redirect_uri;
+  const strip = (url) =>
+    url
+      .replace(/\?redirect_uri=[^&]*&/, '?')
+      .replace(/[?&]redirect_uri=[^&]*/, '')
+      .replace(/\?$/, '');
+  req.originalUrl = strip(req.originalUrl);
+  req.url = strip(req.url);
+}
+
+/**
  * Middleware to retrieve PKCE challenge from cache using the OAuth state.
  * Reads state from req.oauthState (set by a preceding middleware).
  * @param {string} provider - Provider name for logging.
@@ -145,6 +162,7 @@ function retrievePkceChallenge(provider) {
  * ────────────────────────────────────────────── */
 
 router.get('/oauth/openid', async (req, res, next) => {
+  stripAdminPanelRedirectUriQuery(req);
   const state = generateState();
   const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
   const stored = await storeAndStripChallenge(cache, req, state, 'openid');

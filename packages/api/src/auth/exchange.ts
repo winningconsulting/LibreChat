@@ -182,9 +182,20 @@ export const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
 /** Regex pattern for valid PKCE challenges: 64 hex characters (SHA-256 hex digest) */
 export const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
 
-/** Removes `code_challenge` from a single URL string, preserving other query params. */
-const stripChallengeFromUrl = (url: string): string =>
-  url.replace(/\?code_challenge=[^&]*&/, '?').replace(/[?&]code_challenge=[^&]*/, '');
+/** Removes admin-panel-only query params from a single URL string, preserving other query params. */
+const stripAdminPanelParamFromUrl = (url: string, param: string): string =>
+  url
+    .replace(new RegExp(`\\?${param}=[^&]*&`), '?')
+    .replace(new RegExp(`[?&]${param}=[^&]*`), '')
+    .replace(/\?$/, '');
+
+const stripAdminPanelParamsFromUrl = (url: string): string => {
+  let result = url;
+  for (const param of ['code_challenge', 'redirect_uri'] as const) {
+    result = stripAdminPanelParamFromUrl(result, param);
+  }
+  return result;
+};
 
 /** Minimal request shape needed by {@link stripCodeChallenge}. */
 export interface PkceStrippableRequest {
@@ -194,20 +205,19 @@ export interface PkceStrippableRequest {
 }
 
 /**
- * Strips `code_challenge` from the request query and URL strings.
+ * Strips admin-panel-only OAuth query params from the request (`code_challenge`,
+ * `redirect_uri`) so they are not passed to Passport / openid-client.
  *
  * openid-client v6's Passport Strategy uses `currentUrl.searchParams.size === 0`
  * to distinguish an initial authorization request from an OAuth callback.
- * The admin-panel-specific `code_challenge` query parameter would cause the
- * strategy to misclassify the request as a callback and return 401.
- *
- * Applied defensively to all providers to ensure the admin-panel-private
- * `code_challenge` parameter never reaches any Passport strategy.
+ * Those admin-panel parameters would cause the strategy to misclassify the
+ * request as a callback and return 401.
  */
 export function stripCodeChallenge(req: PkceStrippableRequest): void {
   delete req.query.code_challenge;
-  req.originalUrl = stripChallengeFromUrl(req.originalUrl);
-  req.url = stripChallengeFromUrl(req.url);
+  delete req.query.redirect_uri;
+  req.originalUrl = stripAdminPanelParamsFromUrl(req.originalUrl);
+  req.url = stripAdminPanelParamsFromUrl(req.url);
 }
 
 /**
