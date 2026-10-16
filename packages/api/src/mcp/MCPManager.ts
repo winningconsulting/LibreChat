@@ -4,6 +4,7 @@ import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { PersistResourceBlobs, ResourceBlobPersistContext } from './resources';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -18,6 +19,7 @@ import {
   requiresOAuthMachinery,
   requiresUserScopedConnection,
 } from './utils';
+import { extractAndValidateResourceBlobs, STORED_FILES_ARTIFACT_KEY } from './resources';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerInspector } from './registry/MCPServerInspector';
@@ -357,6 +359,8 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver,
     oboTokenResolver,
     oboTrustChecker,
+    persistResourceBlobs,
+    resourcePersistContext,
   }: {
     user?: IUser;
     serverName: string;
@@ -376,6 +380,9 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver?: GraphTokenResolver;
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
+    /** Injected storage callback — only used when the server opts in via config */
+    persistResourceBlobs?: PersistResourceBlobs;
+    resourcePersistContext?: Omit<ResourceBlobPersistContext, 'userId' | 'tenantId'>;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -532,7 +539,48 @@ Please follow these instructions when using tools from the respective MCP server
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
-      return formatToolContent(result as t.MCPToolCallResponse, provider);
+
+      const toolResult = result as t.MCPToolCallResponse;
+      const shouldPersistBlobs =
+        rawConfig.persistResourceBlobs === true && typeof persistResourceBlobs === 'function';
+
+      if (!shouldPersistBlobs) {
+        return formatToolContent(toolResult, provider);
+      }
+
+      const { resources, content: cleanedContent } = extractAndValidateResourceBlobs(
+        toolResult?.content,
+      );
+      const cleanedResult: t.MCPToolCallResponse = {
+        ...toolResult,
+        content: cleanedContent,
+      };
+      const [text, artifacts] = formatToolContent(cleanedResult, provider);
+
+      if (!resources.length) {
+        return [text, artifacts];
+      }
+
+      if (!userId || !resourcePersistContext?.req) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `${logPrefix}[${toolName}] persistResourceBlobs requires an authenticated user and request context.`,
+        );
+      }
+
+      const storedFiles = await persistResourceBlobs(resources, {
+        ...resourcePersistContext,
+        userId,
+        tenantId: user?.tenantId,
+      });
+
+      return [
+        text,
+        {
+          ...artifacts,
+          [STORED_FILES_ARTIFACT_KEY]: storedFiles,
+        },
+      ];
     } catch (error) {
       // Log with context and re-throw or handle as needed
       logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
