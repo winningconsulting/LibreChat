@@ -99,7 +99,7 @@ export default function Artifacts() {
    * "Code" / "Preview" choices. */
   const isPreviewOnly = isPreviewOnlyArtifact(currentArtifact?.type);
   const isCodeOnly = isCodeOnlyArtifact(currentArtifact?.type);
-  const isDocumentWindow = currentArtifact?.identifier?.startsWith('wdocs-') === true;
+  const isDocumentWindow = currentArtifact?.identifier?.startsWith('page-') === true;
   let constrainedTab: 'preview' | 'code' | null = null;
   if (isPreviewOnly || isDocumentWindow) {
     constrainedTab = 'preview';
