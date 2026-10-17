@@ -24,6 +24,7 @@ import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
+import type { StoredResourceFile } from '~/mcp/resources/persist';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -134,6 +135,7 @@ export type Artifacts =
         fileCitations?: boolean;
       };
       [Tools.web_search]?: SearchResultData;
+      stored_files?: StoredResourceFile[];
       files?: Array<{ id: string; name: string }>;
       session_id?: string;
       file_ids?: string[];
