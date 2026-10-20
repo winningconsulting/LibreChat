@@ -11,6 +11,7 @@ import type {
   UpstreamTokenProvider,
   UpstreamTokenProviderResolver,
 } from '~/mcp/oauth/obo';
+import type { PersistResourceBlobs, ResourceBlobPersistContext } from './resources';
 import type { ScheduledMCPInvocation } from '~/schedules/authorization/execution';
 import type { MCPAppOperationContext, MCPAppValidationContext } from './apps';
 import type { ScheduledMCPBearerInvocation } from '~/schedules/bearer';
@@ -60,6 +61,7 @@ import {
   type MCPAppBindingSubject,
   type MCPAppRuntimeTarget,
 } from './apps/binding';
+import { formatToolResultWithOptionalBlobPersistence, type FormatToolContentFn } from './resources';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
 import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
@@ -1453,6 +1455,8 @@ Please follow these instructions when using tools from the respective MCP server
     onOAuthCredentialsChanging,
     mcpApps,
     scheduledMCPInvocation,
+    persistResourceBlobs,
+    resourcePersistContext,
   }: {
     scheduledBearerInvocation?: ScheduledMCPBearerInvocation;
     scheduledMCPInvocation?: ScheduledMCPInvocation;
@@ -1480,6 +1484,9 @@ Please follow these instructions when using tools from the respective MCP server
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
     mcpApps?: TMCPAppsPolicy;
+    /** Injected storage callback — only used when the server opts in via config */
+    persistResourceBlobs?: PersistResourceBlobs;
+    resourcePersistContext?: Omit<ResourceBlobPersistContext, 'userId' | 'tenantId'>;
   }): Promise<t.FormattedToolResponse> {
     if (scheduledBearerInvocation) requestScopedConnections = scheduledBearerInvocation.context;
     const userId = user?.id;
@@ -2182,24 +2189,33 @@ Please follow these instructions when using tools from the respective MCP server
           resolvedAppResource = undefined;
         }
 
-        return markMCPToolResultError(
-          formatToolContent(
-            toolResult,
-            provider,
-            appCompatible
-              ? {
-                  serverName,
-                  toolName,
-                  resourceUri: resourceMeta?.uri,
-                  resolvedAppResource,
-                  serverBinding,
-                  toolArgs: toolArguments,
-                  mcpApps: admittedMCPApps,
-                }
-              : { mcpApps: admittedMCPApps },
-          ),
-          toolResult?.isError === true,
-        );
+        const formatMetadata = appCompatible
+          ? {
+              serverName,
+              toolName,
+              resourceUri: resourceMeta?.uri,
+              resolvedAppResource,
+              serverBinding,
+              toolArgs: toolArguments,
+              mcpApps: admittedMCPApps,
+            }
+          : { mcpApps: admittedMCPApps };
+
+        const formatted = await formatToolResultWithOptionalBlobPersistence({
+          toolResult,
+          provider,
+          formatMetadata,
+          shouldPersistBlobs:
+            rawConfig.persistResourceBlobs === true && typeof persistResourceBlobs === 'function',
+          persistResourceBlobs,
+          resourcePersistContext,
+          userId,
+          tenantId: user?.tenantId,
+          errorPrefix: `${logPrefix}[${toolName}]`,
+          formatToolContent: formatToolContent as FormatToolContentFn,
+        });
+
+        return markMCPToolResultError(formatted, toolResult?.isError === true);
       } catch (error) {
         if (error instanceof OAuthRecoveryTakeoverRequired) {
           recoveryTakeoverConsumed = true;

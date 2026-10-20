@@ -703,6 +703,14 @@ actions:
 #       - "@modelcontextprotocol/server-filesystem"
 #       - /home/user/LibreChat/
 #     iconPath: /home/user/LibreChat/client/public/assets/logo.svg
+#   # Persist embedded resource blobs (base64) from tool results as conversation
+#   # file attachments. Default: false / omitted. Operator YAML or admin config
+#   # only — not available in user-created MCP server input. Enable only for
+#   # trusted servers that return PDF, PPTX, or XLSX resource blobs.
+#   trusted-docs:
+#     type: streamable-http
+#     url: https://mcp.example.com/docs
+#     persistResourceBlobs: true
 #   mcp-obsidian:
 #     command: npx
 #     args:

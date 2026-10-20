@@ -37,6 +37,7 @@ const {
   collectToolCallIds,
   createToolTimingAdapter,
   stampCommandExecutor,
+  enqueueStoredFileAttachments,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -1076,6 +1077,22 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
       );
     }
 
+    enqueueStoredFileAttachments({
+      artifact: output.artifact,
+      messageId: metadata.run_id,
+      toolCallId: output.tool_call_id,
+      conversationId: metadata.thread_id,
+      artifactPromises,
+      emit: (attachment) =>
+        writeAttachment(
+          res,
+          streamId,
+          { ...attachment, ...getAttachmentOwnership(metadata) },
+          jobCreatedAt,
+        ),
+      shouldEmit: () => isStreamWritable(res, streamId),
+    });
+
     if (output.artifact.content) {
       /** @type {FormattedContent[]} */
       const content = output.artifact.content;
@@ -1441,6 +1458,22 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
         }),
       );
     }
+
+    enqueueStoredFileAttachments({
+      artifact: output.artifact,
+      messageId: metadata.run_id,
+      toolCallId: output.tool_call_id,
+      conversationId: metadata.thread_id,
+      artifactPromises,
+      emit: (attachment) =>
+        writeResponsesAttachment(
+          res,
+          tracker,
+          { ...attachment, ...getAttachmentOwnership(metadata) },
+          metadata,
+        ),
+      shouldEmit: () => Boolean(res.headersSent && !res.writableEnded),
+    });
 
     if (output.artifact.content) {
       /** @type {FormattedContent[]} */

@@ -50,6 +50,42 @@ describe('MCP server title validation', () => {
 });
 
 describe('MCPOptionsSchema', () => {
+  describe('persistResourceBlobs', () => {
+    it('defaults to undefined (off) and accepts true', () => {
+      const off = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+      });
+      expect(off.success).toBe(true);
+      if (off.success) {
+        expect(off.data.persistResourceBlobs).toBeUndefined();
+      }
+
+      const on = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        persistResourceBlobs: true,
+      });
+      expect(on.success).toBe(true);
+      if (on.success) {
+        expect(on.data.persistResourceBlobs).toBe(true);
+      }
+    });
+
+    it('is omitted from user input schema', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        persistResourceBlobs: true,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect('persistResourceBlobs' in result.data).toBe(false);
+      }
+      expect(MCP_USER_INPUT_FIELDS.has('persistResourceBlobs')).toBe(false);
+    });
+  });
+
   describe('OBO transport support', () => {
     it('should accept obo on SSE transport', () => {
       const result = MCPOptionsSchema.safeParse({
@@ -879,6 +915,7 @@ describe('MCP_USER_INPUT_FIELDS', () => {
     expect(MCP_USER_INPUT_FIELDS.has('startup')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('timeout')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('chatMenu')).toBe(false);
+    expect(MCP_USER_INPUT_FIELDS.has('persistResourceBlobs')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('requiresOAuth')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('customUserVars')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('oauth_headers')).toBe(false);

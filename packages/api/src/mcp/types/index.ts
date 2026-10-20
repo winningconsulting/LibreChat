@@ -25,6 +25,7 @@ import type {
   UpstreamTokenProvider,
   UpstreamTokenProviderResolver,
 } from '~/mcp/oauth/obo';
+import type { StoredResourceFile } from '~/mcp/resources/persist';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -157,6 +158,7 @@ export type Artifacts =
         fileCitations?: boolean;
       };
       [Tools.web_search]?: SearchResultData;
+      stored_files?: StoredResourceFile[];
       files?: Array<{ id: string; name: string }>;
       session_id?: string;
       file_ids?: string[];

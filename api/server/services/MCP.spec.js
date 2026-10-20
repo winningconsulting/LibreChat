@@ -2704,6 +2704,111 @@ describe('User parameter passing tests', () => {
       expect(mockCallTool).toHaveBeenCalledTimes(2);
     });
 
+    it('forwards persistResourceBlobs only when the server opts in', async () => {
+      const mockUser = { id: 'persist-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn(), req: { user: mockUser, config: {} } };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/docs',
+        persistResourceBlobs: true,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `docs-tool${D}trusted-docs`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`docs-tool${D}trusted-docs`]: {
+            function: {
+              description: 'Docs tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await mcpTool.invoke(
+        {},
+        {
+          configurable: { user: mockUser },
+          metadata: {
+            provider: 'openai',
+            thread_id: 'thread-1',
+            run_id: 'run-1',
+          },
+          toolCall: { id: 'tool-call-1' },
+        },
+      );
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          persistResourceBlobs: expect.any(Function),
+          resourcePersistContext: expect.objectContaining({
+            req: mockRes.req,
+            conversationId: 'thread-1',
+            messageId: 'run-1',
+            toolCallId: 'tool-call-1',
+          }),
+        }),
+      );
+
+      mockCallTool.mockClear();
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/docs',
+      });
+
+      const plainTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `docs-tool${D}plain-docs`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`docs-tool${D}plain-docs`]: {
+            function: {
+              description: 'Docs tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await plainTool.invoke(
+        {},
+        {
+          configurable: { user: mockUser },
+          metadata: {
+            provider: 'openai',
+            thread_id: 'thread-1',
+            run_id: 'run-1',
+          },
+          toolCall: { id: 'tool-call-2' },
+        },
+      );
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          persistResourceBlobs: expect.anything(),
+        }),
+      );
+    });
+
     it('should pass the captured user to MCPManager.callTool when invocation config omits configurable.user', async () => {
       const mockUser = { id: 'captured-user', email: 'captured@example.com', role: 'USER' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };

@@ -78,6 +78,7 @@ const { getGraphApiToken } = require('./GraphTokenService');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
 const { createOpenIDSessionTokenProvider } = require('./OpenIDSessionRefresh');
+const { persistResourceBlobs } = require('~/server/services/MCP/persistResourceBlobs');
 const { reinitMCPServer } = require('./Tools/mcp');
 const {
   getAppConfig,
@@ -1373,6 +1374,9 @@ function createToolInstance({
        * is required for OBO since the grant sends the access token to the IdP
        * as the jwt-bearer assertion.
        */
+      const requestBody = config?.configurable?.requestBody ?? capturedRequestBody;
+      const shouldPersistResourceBlobs = capturedServerConfig?.persistResourceBlobs === true;
+      const persistReq = res?.req;
       const result = await mcpManager.callTool({
         scheduledBearerInvocation,
         scheduledMCPInvocation,
@@ -1387,7 +1391,7 @@ function createToolInstance({
           signal: derivedSignal,
         },
         user: effectiveUser,
-        requestBody: config?.configurable?.requestBody ?? capturedRequestBody,
+        requestBody,
         requestScopedConnections:
           config?.configurable?.requestScopedConnections ?? capturedRequestScopedConnections,
         customUserVars,
@@ -1417,6 +1421,22 @@ function createToolInstance({
         upstreamTokenProviderResolver: capturedUpstreamTokenProviderResolver,
         oboIdentityContext: capturedOboIdentityContext,
         mcpApps: capturedMCPApps,
+        ...(shouldPersistResourceBlobs
+          ? {
+              persistResourceBlobs,
+              resourcePersistContext: persistReq
+                ? {
+                    req: persistReq,
+                    conversationId:
+                      config?.metadata?.thread_id ??
+                      requestBody?.conversationId ??
+                      config?.configurable?.thread_id,
+                    messageId: config?.metadata?.run_id ?? requestBody?.messageId,
+                    toolCallId: config?.toolCall?.id ?? config?.toolCall?.tool_call_id,
+                  }
+                : undefined,
+            }
+          : {}),
       });
       return result;
     } catch (error) {
