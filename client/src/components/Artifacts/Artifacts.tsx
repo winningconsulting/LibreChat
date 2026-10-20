@@ -99,8 +99,9 @@ export default function Artifacts() {
    * "Code" / "Preview" choices. */
   const isPreviewOnly = isPreviewOnlyArtifact(currentArtifact?.type);
   const isCodeOnly = isCodeOnlyArtifact(currentArtifact?.type);
+  const isDocumentWindow = currentArtifact?.identifier?.startsWith('page-') === true;
   let constrainedTab: 'preview' | 'code' | null = null;
-  if (isPreviewOnly) {
+  if (isPreviewOnly || isDocumentWindow) {
     constrainedTab = 'preview';
   } else if (isCodeOnly) {
     constrainedTab = 'code';
@@ -265,6 +266,7 @@ export default function Artifacts() {
             className={cn(
               'flex h-[52px] flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt p-2 transition-all duration-300',
               isMobile ? 'justify-center' : 'overflow-hidden',
+              isDocumentWindow && 'hidden',
             )}
           >
             {!isMobile && (
@@ -350,6 +352,17 @@ export default function Artifacts() {
                 isSharedConvo={isSharedConvo}
               />
             </div>
+            {isDocumentWindow && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="absolute right-2 top-2 z-10 h-8 w-8 text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                onClick={closeArtifacts}
+                aria-label={localize('com_ui_close')}
+              >
+                <X size={16} aria-hidden="true" />
+              </Button>
+            )}
 
             <div
               className={cn(
