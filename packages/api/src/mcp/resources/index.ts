@@ -1,13 +1,7 @@
-export {
-  DEFAULT_MCP_RESOURCE_BLOB_MAX_BYTES,
-  DEFAULT_MCP_RESOURCE_BLOB_MAX_FILES,
-  MCP_RESOURCE_MIME_EXTENSIONS,
-  MCPResourceBlobError,
-  extractAndValidateResourceBlobs,
-} from './files';
+export { MCPResourceBlobError, extractAndValidateResourceBlobs } from './files';
 export type {
-  AllowedMCPResourceMimeType,
   ExtractResourceBlobsResult,
+  ResourceBlobValidationOptions,
   ValidatedResourceBlob,
 } from './files';
 

@@ -249,8 +249,9 @@ const BaseOptionsSchema = z.object({
   serverInstructions: z.union([z.boolean(), z.string()]).optional(),
   /**
    * When true, embedded resource blobs from this server's tool results are
-   * validated and persisted as conversation file attachments. Default: false.
-   * Opt-in only; intended for trusted operator-configured servers.
+   * validated with the same fileConfig admission rules as conversation uploads
+   * and persisted as file attachments. Default: false. Opt-in only; intended
+   * for trusted operator-configured servers.
    */
   persistResourceBlobs: z.boolean().optional(),
   /**

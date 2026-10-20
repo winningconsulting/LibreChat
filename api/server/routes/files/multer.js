@@ -2,7 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
-const { sanitizeFilename, createCustomError } = require('@librechat/api');
+const {
+  sanitizeFilename,
+  createCustomError,
+  collectSupportedMimeTypesForUpload,
+} = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
   mergeFileConfig,
@@ -59,18 +63,6 @@ const importFileFilter = (req, file, cb) => {
   }
 };
 
-/** Every type some configured endpoint accepts, for a request whose real endpoint is only
- *  known after an agent read this filter cannot make. */
-const collectSupportedMimeTypes = (customFileConfig, endpointFileConfig) => {
-  const merged = [...(endpointFileConfig.supportedMimeTypes ?? [])];
-  for (const config of Object.values(customFileConfig?.endpoints ?? {})) {
-    for (const mimeType of config?.supportedMimeTypes ?? []) {
-      merged.push(mimeType);
-    }
-  }
-  return merged;
-};
-
 const normalizeUploadMimeType = (file) => {
   const mimeType = inferMimeType(file.originalname || '', file.mimetype || '');
   if (mimeType && file.mimetype !== mimeType) {
@@ -115,7 +107,7 @@ const createFileFilter = (customFileConfig, resolveEndpoint) => {
      * question is only whether any configured endpoint accepts the type. Narrowing to
      * `agents` would make the later provider check able to reject but never to permit. */
     const supportedMimeTypes = isAgentsEndpoint(endpoint)
-      ? collectSupportedMimeTypes(customFileConfig, endpointFileConfig)
+      ? collectSupportedMimeTypesForUpload(customFileConfig, endpointFileConfig)
       : endpointFileConfig.supportedMimeTypes;
 
     if (!defaultFileConfig.checkType(mimeType, supportedMimeTypes)) {

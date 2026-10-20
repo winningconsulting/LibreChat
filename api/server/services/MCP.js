@@ -1433,6 +1433,8 @@ function createToolInstance({
                       config?.configurable?.thread_id,
                     messageId: config?.metadata?.run_id ?? requestBody?.messageId,
                     toolCallId: config?.toolCall?.id ?? config?.toolCall?.tool_call_id,
+                    endpoint: requestBody?.endpoint ?? config?.configurable?.endpoint,
+                    endpointType: requestBody?.endpointType ?? config?.configurable?.endpointType,
                   }
                 : undefined,
             }

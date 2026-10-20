@@ -33,6 +33,9 @@ export type ResourceBlobPersistContext = {
   messageId?: string;
   toolCallId?: string;
   context?: FileContext;
+  /** Conversation endpoint for `fileConfig` admission (defaults to agents). */
+  endpoint?: string | null;
+  endpointType?: string | null;
   /**
    * Minimal Express request surface for storage strategies (user + app config).
    * Typed loosely so packages/api stays free of Express types.
@@ -41,6 +44,7 @@ export type ResourceBlobPersistContext = {
     user: { id: string; tenantId?: string; role?: string };
     config: {
       fileStrategy?: FileSources | string;
+      fileConfig?: unknown;
       paths?: Record<string, string>;
       [key: string]: unknown;
     };

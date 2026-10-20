@@ -46,6 +46,11 @@ export async function formatToolResultWithOptionalBlobPersistence({
 
   const { resources, content: cleanedContent } = extractAndValidateResourceBlobs(
     toolResult?.content,
+    {
+      fileConfig: resourcePersistContext?.req?.config?.fileConfig,
+      endpoint: resourcePersistContext?.endpoint,
+      endpointType: resourcePersistContext?.endpointType,
+    },
   );
   const cleanedResult: MCPToolCallResponse = {
     ...toolResult,

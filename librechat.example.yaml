@@ -706,7 +706,9 @@ actions:
 #   # Persist embedded resource blobs (base64) from tool results as conversation
 #   # file attachments. Default: false / omitted. Operator YAML or admin config
 #   # only — not available in user-created MCP server input. Enable only for
-#   # trusted servers that return PDF, PPTX, or XLSX resource blobs.
+#   # trusted servers. Admitted types, sizes, and counts follow the same
+#   # fileConfig rules as conversation uploads (supportedMimeTypes,
+#   # fileSizeLimit / serverFileSizeLimit, fileLimit).
 #   trusted-docs:
 #     type: streamable-http
 #     url: https://mcp.example.com/docs

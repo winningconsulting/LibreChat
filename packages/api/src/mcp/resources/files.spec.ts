@@ -1,16 +1,9 @@
+﻿import { megabyte } from 'librechat-data-provider';
 import type { ToolContentPart } from '../types';
-import {
-  DEFAULT_MCP_RESOURCE_BLOB_MAX_FILES,
-  MCPResourceBlobError,
-  extractAndValidateResourceBlobs,
-} from './files';
+import { extractAndValidateResourceBlobs } from './files';
 
 function pdfBlob(extra = ''): string {
   return Buffer.from(`%PDF-1.4\n${extra}%%EOF`).toString('base64');
-}
-
-function zipBlob(): string {
-  return Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00]).toString('base64');
 }
 
 function resourcePart({
@@ -33,22 +26,6 @@ function resourcePart({
 }
 
 describe('extractAndValidateResourceBlobs', () => {
-  const originalMaxBytes = process.env.MCP_RESOURCE_BLOB_MAX_BYTES;
-  const originalMaxFiles = process.env.MCP_RESOURCE_BLOB_MAX_FILES;
-
-  afterEach(() => {
-    if (originalMaxBytes === undefined) {
-      delete process.env.MCP_RESOURCE_BLOB_MAX_BYTES;
-    } else {
-      process.env.MCP_RESOURCE_BLOB_MAX_BYTES = originalMaxBytes;
-    }
-    if (originalMaxFiles === undefined) {
-      delete process.env.MCP_RESOURCE_BLOB_MAX_FILES;
-    } else {
-      process.env.MCP_RESOURCE_BLOB_MAX_FILES = originalMaxFiles;
-    }
-  });
-
   it('returns empty resources and keeps non-blob content when none are present', () => {
     const content: ToolContentPart[] = [
       { type: 'text', text: 'hello' },
@@ -86,27 +63,30 @@ describe('extractAndValidateResourceBlobs', () => {
       mimeType: 'application/pdf',
       uri: 'mcp-resource://file/11111111-1111-1111-1111-111111111111/report.pdf',
     });
-    expect(result.resources[0].buffer.subarray(0, 5).toString('utf8')).toBe('%PDF-');
     expect(JSON.stringify(result)).not.toContain(blob);
   });
 
-  it('accepts pptx and xlsx zip signatures', () => {
-    const blob = zipBlob();
+  it('accepts MIME types allowed by default fileConfig (text, Office, images)', () => {
     const content: ToolContentPart[] = [
       resourcePart({
-        uri: 'mcp-resource://file/a/deck.pptx',
-        mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        blob,
+        uri: 'mcp-resource://file/a/note.txt',
+        mimeType: 'text/plain',
+        blob: Buffer.from('hello').toString('base64'),
       }),
       resourcePart({
-        uri: 'mcp-resource://file/b/sheet.xlsx',
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        blob,
+        uri: 'mcp-resource://file/b/doc.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        blob: Buffer.from('docx').toString('base64'),
+      }),
+      resourcePart({
+        uri: 'mcp-resource://file/c/photo.png',
+        mimeType: 'image/png',
+        blob: Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'),
       }),
     ];
 
     const result = extractAndValidateResourceBlobs(content);
-    expect(result.resources.map((r) => r.filename)).toEqual(['deck.pptx', 'sheet.xlsx']);
+    expect(result.resources.map((r) => r.filename)).toEqual(['note.txt', 'doc.docx', 'photo.png']);
     expect(result.content).toEqual([]);
   });
 
@@ -128,28 +108,54 @@ describe('extractAndValidateResourceBlobs', () => {
     expect(result.content).toEqual(content);
   });
 
-  it('rejects disallowed MIME types', () => {
+  it('rejects MIME types outside fileConfig.supportedMimeTypes', () => {
     expect(() =>
       extractAndValidateResourceBlobs([
         resourcePart({
-          uri: 'mcp-resource://file/a/note.txt',
-          mimeType: 'text/plain',
-          blob: Buffer.from('hi').toString('base64'),
+          uri: 'mcp-resource://file/a/payload.bin',
+          mimeType: 'application/x-msdownload',
+          blob: Buffer.from('MZ').toString('base64'),
         }),
       ]),
-    ).toThrow(MCPResourceBlobError);
+    ).toThrow(/not allowed for conversation attachments/);
   });
 
-  it('rejects extension/MIME mismatches', () => {
+  it('honours a narrowed fileConfig MIME allowlist for a specific endpoint', () => {
+    const narrowed = {
+      fileConfig: {
+        endpoints: {
+          openAI: {
+            supportedMimeTypes: ['^application/pdf$'],
+          },
+        },
+      },
+      endpoint: 'openAI',
+    };
+
     expect(() =>
-      extractAndValidateResourceBlobs([
+      extractAndValidateResourceBlobs(
+        [
+          resourcePart({
+            uri: 'mcp-resource://file/a/note.txt',
+            mimeType: 'text/plain',
+            blob: Buffer.from('hi').toString('base64'),
+          }),
+        ],
+        narrowed,
+      ),
+    ).toThrow(/not allowed for conversation attachments/);
+
+    const pdf = extractAndValidateResourceBlobs(
+      [
         resourcePart({
-          uri: 'mcp-resource://file/a/report.pptx',
+          uri: 'mcp-resource://file/a/report.pdf',
           mimeType: 'application/pdf',
           blob: pdfBlob(),
         }),
-      ]),
-    ).toThrow(/does not match MIME type/);
+      ],
+      narrowed,
+    );
+    expect(pdf.resources).toHaveLength(1);
   });
 
   it('rejects path segments in filenames', () => {
@@ -164,61 +170,58 @@ describe('extractAndValidateResourceBlobs', () => {
     ).toThrow(/path segments/);
   });
 
-  it('rejects oversized base64 before decoding when possible', () => {
-    process.env.MCP_RESOURCE_BLOB_MAX_BYTES = '16';
+  it('rejects blobs larger than fileConfig size limits', () => {
+    const limitBytes = 16;
     const large = 'A'.repeat(64);
     expect(() =>
-      extractAndValidateResourceBlobs([
-        resourcePart({
-          uri: 'mcp-resource://file/a/report.pdf',
-          mimeType: 'application/pdf',
-          blob: large,
-        }),
-      ]),
+      extractAndValidateResourceBlobs(
+        [
+          resourcePart({
+            uri: 'mcp-resource://file/a/report.pdf',
+            mimeType: 'application/pdf',
+            blob: large,
+          }),
+        ],
+        {
+          fileConfig: {
+            serverFileSizeLimit: limitBytes / megabyte,
+            endpoints: {
+              agents: {
+                fileSizeLimit: limitBytes / megabyte,
+              },
+            },
+          },
+        },
+      ),
     ).toThrow(/exceeds maximum size/);
   });
 
-  it('rejects too many resource blobs', () => {
-    process.env.MCP_RESOURCE_BLOB_MAX_FILES = '1';
+  it('rejects too many resource blobs using endpoint fileLimit', () => {
     expect(() =>
-      extractAndValidateResourceBlobs([
-        resourcePart({
-          uri: 'mcp-resource://file/a/one.pdf',
-          mimeType: 'application/pdf',
-          blob: pdfBlob(),
-        }),
-        resourcePart({
-          uri: 'mcp-resource://file/b/two.pdf',
-          mimeType: 'application/pdf',
-          blob: pdfBlob(),
-        }),
-      ]),
-    ).toThrow(new RegExp(`maximum of 1`));
-    expect(DEFAULT_MCP_RESOURCE_BLOB_MAX_FILES).toBeGreaterThan(0);
-  });
-
-  it('rejects invalid PDF signatures', () => {
-    expect(() =>
-      extractAndValidateResourceBlobs([
-        resourcePart({
-          uri: 'mcp-resource://file/a/report.pdf',
-          mimeType: 'application/pdf',
-          blob: Buffer.from('not-a-pdf').toString('base64'),
-        }),
-      ]),
-    ).toThrow(/not a valid PDF/);
-  });
-
-  it('rejects invalid Office Open XML signatures', () => {
-    expect(() =>
-      extractAndValidateResourceBlobs([
-        resourcePart({
-          uri: 'mcp-resource://file/a/sheet.xlsx',
-          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          blob: Buffer.from('not-a-zip').toString('base64'),
-        }),
-      ]),
-    ).toThrow(/not a valid Office Open XML file/);
+      extractAndValidateResourceBlobs(
+        [
+          resourcePart({
+            uri: 'mcp-resource://file/a/one.pdf',
+            mimeType: 'application/pdf',
+            blob: pdfBlob(),
+          }),
+          resourcePart({
+            uri: 'mcp-resource://file/b/two.pdf',
+            mimeType: 'application/pdf',
+            blob: pdfBlob(),
+          }),
+        ],
+        {
+          fileConfig: {
+            endpoints: {
+              agents: {
+                fileLimit: 1,
+              },
+            },
+          },
+        },
+      ),
+    ).toThrow(/maximum of 1/);
   });
 
   it('rejects missing filenames', () => {

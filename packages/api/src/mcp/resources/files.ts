@@ -6,28 +6,26 @@ import type {
   ResourceLink,
   TextContent,
 } from '@modelcontextprotocol/sdk/types.js';
+import {
+  isConversationAttachmentMimeTypeAllowed,
+  normalizeAttachmentMimeType,
+  resolveConversationAttachmentPolicy,
+  type ConversationAttachmentPolicy,
+} from '~/files/admission';
 
 /** Local union so this module does not import `../types` (avoids a cycle via persist). */
 type ToolContentPart = TextContent | ImageContent | EmbeddedResource | ResourceLink | AudioContent;
 
-export const DEFAULT_MCP_RESOURCE_BLOB_MAX_BYTES: number = 25 * 1024 * 1024;
-export const DEFAULT_MCP_RESOURCE_BLOB_MAX_FILES: number = 10;
-
-export const MCP_RESOURCE_MIME_EXTENSIONS: {
-  readonly 'application/pdf': '.pdf';
-  readonly 'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx';
-  readonly 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx';
-} = {
-  'application/pdf': '.pdf',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+export type ResourceBlobValidationOptions = {
+  /** Raw `fileConfig` from app config (same source as upload admission). */
+  fileConfig?: unknown;
+  endpoint?: string | null;
+  endpointType?: string | null;
 };
-
-export type AllowedMCPResourceMimeType = keyof typeof MCP_RESOURCE_MIME_EXTENSIONS;
 
 export type ValidatedResourceBlob = {
   filename: string;
-  mimeType: AllowedMCPResourceMimeType;
+  mimeType: string;
   buffer: Buffer;
   uri: string;
 };
@@ -42,26 +40,6 @@ export class MCPResourceBlobError extends Error {
     super(message);
     this.name = 'MCPResourceBlobError';
   }
-}
-
-function getMCPResourceBlobMaxBytes(): number {
-  const raw = process.env.MCP_RESOURCE_BLOB_MAX_BYTES;
-  if (!raw) {
-    return DEFAULT_MCP_RESOURCE_BLOB_MAX_BYTES;
-  }
-
-  const parsed = Number(raw);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MCP_RESOURCE_BLOB_MAX_BYTES;
-}
-
-function getMCPResourceBlobMaxFiles(): number {
-  const raw = process.env.MCP_RESOURCE_BLOB_MAX_FILES;
-  if (!raw) {
-    return DEFAULT_MCP_RESOURCE_BLOB_MAX_FILES;
-  }
-
-  const parsed = Number(raw);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MCP_RESOURCE_BLOB_MAX_FILES;
 }
 
 function getBase64Padding(data: string): number {
@@ -125,44 +103,17 @@ function assertSafeFilename(filename: string): void {
   }
 }
 
-function assertMimeAndExtension(mimeType: string, filename: string): AllowedMCPResourceMimeType {
-  if (!(mimeType in MCP_RESOURCE_MIME_EXTENSIONS)) {
-    throw new MCPResourceBlobError(`MCP resource blob MIME type is not allowed: ${mimeType}`);
-  }
-
-  const allowed = mimeType as AllowedMCPResourceMimeType;
-  const expectedExt = MCP_RESOURCE_MIME_EXTENSIONS[allowed];
-  const actualExt = path.extname(filename).toLowerCase();
-  if (actualExt !== expectedExt) {
-    throw new MCPResourceBlobError(
-      `MCP resource blob extension "${actualExt}" does not match MIME type "${mimeType}"`,
-    );
-  }
-
-  return allowed;
+function resolvePolicy(options?: ResourceBlobValidationOptions): ConversationAttachmentPolicy {
+  return resolveConversationAttachmentPolicy(options?.fileConfig, {
+    endpoint: options?.endpoint,
+    endpointType: options?.endpointType,
+  });
 }
 
-function assertFileSignature(buffer: Buffer, mimeType: AllowedMCPResourceMimeType): void {
-  if (mimeType === 'application/pdf') {
-    if (buffer.length < 5 || buffer.subarray(0, 5).toString('utf8') !== '%PDF-') {
-      throw new MCPResourceBlobError('MCP resource blob is not a valid PDF');
-    }
-    return;
-  }
-
-  const isZip =
-    buffer.length >= 4 &&
-    buffer[0] === 0x50 &&
-    buffer[1] === 0x4b &&
-    (buffer[2] === 0x03 || buffer[2] === 0x05 || buffer[2] === 0x07) &&
-    (buffer[3] === 0x04 || buffer[3] === 0x06 || buffer[3] === 0x08);
-
-  if (!isZip) {
-    throw new MCPResourceBlobError('MCP resource blob is not a valid Office Open XML file');
-  }
-}
-
-function validateResourceBlob(item: EmbeddedResource): ValidatedResourceBlob {
+function validateResourceBlob(
+  item: EmbeddedResource,
+  policy: ConversationAttachmentPolicy,
+): ValidatedResourceBlob {
   const { resource } = item;
   if (!hasBlob(resource)) {
     throw new MCPResourceBlobError('MCP resource is missing a blob');
@@ -183,9 +134,15 @@ function validateResourceBlob(item: EmbeddedResource): ValidatedResourceBlob {
 
   const filename = filenameFromUri(resource.uri);
   assertSafeFilename(filename);
-  const mimeType = assertMimeAndExtension(mimeTypeRaw, filename);
 
-  const maxBytes = getMCPResourceBlobMaxBytes();
+  const mimeType = normalizeAttachmentMimeType(filename, mimeTypeRaw);
+  if (!isConversationAttachmentMimeTypeAllowed(mimeType, policy.supportedMimeTypes)) {
+    throw new MCPResourceBlobError(
+      `MCP resource blob MIME type is not allowed for conversation attachments: ${mimeType}`,
+    );
+  }
+
+  const maxBytes = policy.fileSizeLimit;
   const estimatedBytes = estimateBase64Bytes(resource.blob);
   if (estimatedBytes > maxBytes) {
     throw new MCPResourceBlobError(
@@ -210,8 +167,6 @@ function validateResourceBlob(item: EmbeddedResource): ValidatedResourceBlob {
     );
   }
 
-  assertFileSignature(buffer, mimeType);
-
   return {
     filename,
     mimeType,
@@ -221,16 +176,19 @@ function validateResourceBlob(item: EmbeddedResource): ValidatedResourceBlob {
 }
 
 /**
- * Extracts opted-in MCP embedded resource blobs, validates them, and returns
- * tool content with those resource parts removed so base64 never reaches the model.
+ * Extracts opted-in MCP embedded resource blobs, validates them with the same
+ * conversation-attachment `fileConfig` rules as uploads, and returns tool content
+ * with those resource parts removed so base64 never reaches the model.
  */
 export function extractAndValidateResourceBlobs(
   content: ToolContentPart[] | undefined,
+  options?: ResourceBlobValidationOptions,
 ): ExtractResourceBlobsResult {
   const parts = content ?? [];
   const resources: ValidatedResourceBlob[] = [];
   const kept: ToolContentPart[] = [];
-  const maxFiles = getMCPResourceBlobMaxFiles();
+  const policy = resolvePolicy(options);
+  const maxFiles = policy.fileLimit;
 
   for (const item of parts) {
     if (!isEmbeddedResource(item) || !hasBlob(item.resource)) {
@@ -249,7 +207,7 @@ export function extractAndValidateResourceBlobs(
       );
     }
 
-    resources.push(validateResourceBlob(item));
+    resources.push(validateResourceBlob(item, policy));
   }
 
   return { resources, content: kept };
