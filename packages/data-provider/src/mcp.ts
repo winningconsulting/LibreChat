@@ -184,6 +184,12 @@ const BaseOptionsSchema = z.object({
    */
   serverInstructions: z.union([z.boolean(), z.string()]).optional(),
   /**
+   * When true, embedded resource blobs from this server's tool results are
+   * validated and persisted as conversation file attachments. Default: false.
+   * Opt-in only; intended for trusted operator-configured servers.
+   */
+  persistResourceBlobs: z.boolean().optional(),
+  /**
    * Whether this server requires OAuth authentication
    * If not specified, will be auto-detected during construction
    */
@@ -386,6 +392,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     initTimeout: true,
     chatMenu: true,
     serverInstructions: true,
+    persistResourceBlobs: true,
     requiresOAuth: true,
     customUserVars: true,
     oauth_headers: true,
