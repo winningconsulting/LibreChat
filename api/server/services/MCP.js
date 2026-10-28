@@ -48,6 +48,7 @@ const {
   MCPAuthenticationRejectedError,
   prepareMCPAuthorizationMutation,
 } = require('@librechat/api');
+const { persistResourceBlobs } = require('~/server/services/MCP/persistResourceBlobs');
 const {
   Time,
   CacheKeys,
@@ -1309,6 +1310,9 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
+      const requestBody = config?.configurable?.requestBody ?? capturedRequestBody;
+      const shouldPersistResourceBlobs = capturedServerConfig?.persistResourceBlobs === true;
+      const persistReq = res?.req;
       /**
        * The upstream-token closure is built at the request boundary (where
        * `req`/`res` are in scope) and captured here, so this layer never holds
@@ -1332,7 +1336,7 @@ function createToolInstance({
           signal: derivedSignal,
         },
         user: effectiveUser,
-        requestBody: config?.configurable?.requestBody ?? capturedRequestBody,
+        requestBody,
         requestScopedConnections:
           config?.configurable?.requestScopedConnections ?? capturedRequestScopedConnections,
         customUserVars,
@@ -1361,6 +1365,22 @@ function createToolInstance({
         upstreamTokenProvider: capturedUpstreamTokenProvider,
         upstreamTokenProviderResolver: capturedUpstreamTokenProviderResolver,
         oboIdentityContext: capturedOboIdentityContext,
+        ...(shouldPersistResourceBlobs
+          ? {
+              persistResourceBlobs,
+              resourcePersistContext: persistReq
+                ? {
+                    req: persistReq,
+                    conversationId:
+                      config?.metadata?.thread_id ??
+                      requestBody?.conversationId ??
+                      config?.configurable?.thread_id,
+                    messageId: config?.metadata?.run_id ?? requestBody?.messageId,
+                    toolCallId: config?.toolCall?.id ?? config?.toolCall?.tool_call_id,
+                  }
+                : undefined,
+            }
+          : {}),
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
