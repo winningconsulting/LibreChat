@@ -10,6 +10,7 @@ import type {
   UpstreamTokenProvider,
   UpstreamTokenProviderResolver,
 } from '~/mcp/oauth/obo';
+import type { PersistResourceBlobs, ResourceBlobPersistContext } from './resources';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -31,6 +32,7 @@ import {
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
 import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } from './errors';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
+import { extractAndValidateResourceBlobs, STORED_FILES_ARTIFACT_KEY } from './resources';
 import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
@@ -1122,6 +1124,8 @@ Please follow these instructions when using tools from the respective MCP server
     oboIdentityContext,
     onOAuthCredentialsChanged,
     onOAuthCredentialsChanging,
+    persistResourceBlobs,
+    resourcePersistContext,
   }: {
     user?: IUser;
     serverName: string;
@@ -1146,6 +1150,9 @@ Please follow these instructions when using tools from the respective MCP server
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
+    /** Injected storage callback — only used when the server opts in via config */
+    persistResourceBlobs?: PersistResourceBlobs;
+    resourcePersistContext?: Omit<ResourceBlobPersistContext, 'userId' | 'tenantId'>;
   }): Promise<t.FormattedToolResponse> {
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
@@ -1652,7 +1659,48 @@ Please follow these instructions when using tools from the respective MCP server
           await this.updateUserLastActivity(userId);
         }
         this.checkIdleConnections();
-        return formatToolContent(result as t.MCPToolCallResponse, provider);
+
+        const toolResult = result as t.MCPToolCallResponse;
+        const shouldPersistBlobs =
+          rawConfig.persistResourceBlobs === true && typeof persistResourceBlobs === 'function';
+
+        if (!shouldPersistBlobs) {
+          return formatToolContent(toolResult, provider);
+        }
+
+        const { resources, content: cleanedContent } = extractAndValidateResourceBlobs(
+          toolResult?.content,
+        );
+        const cleanedResult: t.MCPToolCallResponse = {
+          ...toolResult,
+          content: cleanedContent,
+        };
+        const [text, artifacts] = formatToolContent(cleanedResult, provider);
+
+        if (!resources.length) {
+          return [text, artifacts];
+        }
+
+        if (!userId || !resourcePersistContext?.req) {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `${logPrefix}[${toolName}] persistResourceBlobs requires an authenticated user and request context.`,
+          );
+        }
+
+        const storedFiles = await persistResourceBlobs(resources, {
+          ...resourcePersistContext,
+          userId,
+          tenantId: user?.tenantId,
+        });
+
+        return [
+          text,
+          {
+            ...artifacts,
+            [STORED_FILES_ARTIFACT_KEY]: storedFiles,
+          },
+        ];
       } catch (error) {
         if (error instanceof OAuthRecoveryTakeoverRequired) {
           recoveryTakeoverConsumed = true;
