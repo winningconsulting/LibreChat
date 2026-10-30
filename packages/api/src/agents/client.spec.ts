@@ -13,6 +13,7 @@ import {
   prependQuotes,
   prependFileContext,
   applyAttachmentOnlyText,
+  prependMessageTimestamp,
 } from './client';
 import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
 import Tokenizer from '~/utils/tokenizer';
@@ -435,6 +436,57 @@ describe('prependQuotes', () => {
 
     prependQuotes(message, null);
     expect(message.content).toBe('Explain this.');
+  });
+});
+
+describe('prependMessageTimestamp', () => {
+  const sentAt = '2026-10-26T09:00:00.000Z';
+
+  it('states the send time and time zone in the sender time zone', () => {
+    const message: FormattedMessageWithContent = { content: 'First question' };
+
+    prependMessageTimestamp(message, sentAt, 'America/Sao_Paulo');
+
+    expect(message.content).toBe(
+      '<context_update>\nMessage sent: 2026-10-26 06:00:00 -03:00 (Monday)\nTime zone: America/Sao_Paulo\n</context_update>\n\nFirst question',
+    );
+  });
+
+  it('prepends to the first text part of array content, leaving other parts intact', () => {
+    const image = { type: ContentTypes.IMAGE_URL, image_url: { url: 'data:image/png;base64,abc' } };
+    const message: FormattedMessageWithContent = {
+      content: [image, { type: ContentTypes.TEXT, text: 'Describe this.' }],
+    };
+
+    prependMessageTimestamp(message, sentAt, 'Europe/Lisbon');
+
+    if (!Array.isArray(message.content)) {
+      throw new Error('Expected array content');
+    }
+    expect(message.content[0]).toEqual(image);
+    expect(message.content[1].text).toBe(
+      '<context_update>\nMessage sent: 2026-10-26 09:00:00 +00:00 (Monday)\nTime zone: Europe/Lisbon\n</context_update>\n\nDescribe this.',
+    );
+  });
+
+  it('leaves out the time zone line when the time zone is missing or unknown', () => {
+    const missing: FormattedMessageWithContent = { content: 'Question' };
+    const unknown: FormattedMessageWithContent = { content: 'Question' };
+
+    prependMessageTimestamp(missing, sentAt, undefined);
+    prependMessageTimestamp(unknown, sentAt, 'Not/AZone');
+
+    expect(missing.content).not.toContain('Time zone:');
+    expect(unknown.content).not.toContain('Time zone:');
+    expect(unknown.content).toContain('Message sent: 2026-10-26');
+  });
+
+  it('leaves the message unchanged without a send time', () => {
+    const message: FormattedMessageWithContent = { content: 'Question' };
+
+    prependMessageTimestamp(message, undefined, 'Europe/Lisbon');
+
+    expect(message.content).toBe('Question');
   });
 });
 

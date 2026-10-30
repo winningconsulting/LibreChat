@@ -126,6 +126,7 @@ const {
   prependFileContext,
   prependQuotes,
   applyAttachmentOnlyText,
+  prependMessageTimestamp,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   buildAgentEventActorSkillMessages,
@@ -2541,6 +2542,24 @@ class AgentClient extends BaseClient {
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
     /**
+     * With `promptMessageTimestamps`, every user message states when it was sent,
+     * in the sender's time zone, so the model knows the date and time without
+     * either living in the system prompt. Applied last, after the attachment-only
+     * text, so a turn with only files keeps that text under its timestamp.
+     */
+    const stampsMessages =
+      this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.promptMessageTimestamps === true;
+    const stampSendTime = (formattedMessage, message) => {
+      if (!stampsMessages || message.isCreatedByUser !== true) {
+        return;
+      }
+      prependMessageTimestamp(
+        formattedMessage,
+        message.createdAt ?? this.options.req.turnStartedAt,
+        this.options.req.body?.timezone,
+      );
+    };
+    /**
      * Rebuilds the memory-side copy of one source row: the same formatting and
      * per-message merges as the prompt copy, minus the fileContext prepend.
      * Only materialized when something actually consumes it — the canonical
@@ -2563,6 +2582,7 @@ class AgentClient extends BaseClient {
       }
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(memoryFormattedMessage, turnFiles);
+      stampSendTime(memoryFormattedMessage, message);
       return memoryFormattedMessage;
     };
     /** Memory copies built for canonical recounts, reused by the memory payload pass. */
@@ -2614,6 +2634,7 @@ class AgentClient extends BaseClient {
        */
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
+      stampSendTime(formattedMessage, message);
 
       /**
        * A summarize round that errored or was cut off never reaches the model:

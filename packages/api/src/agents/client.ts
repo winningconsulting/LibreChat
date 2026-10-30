@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import {
   ContentTypes,
   isAgentsEndpoint,
+  replaceSpecialVars,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from 'librechat-data-provider';
 import {
@@ -141,6 +142,45 @@ export function prependContextText(
   const textPart = formattedMessage.content[index];
   formattedMessage.content = formattedMessage.content.map((part, position) =>
     position === index ? { ...textPart, text: `${text}${separator}${textPart.text}` } : part,
+  );
+}
+
+function isKnownTimeZone(timezone?: string | null): timezone is string {
+  if (!timezone) {
+    return false;
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Prepends when a user message was sent, in the sender's time zone, as a
+ * `<context_update>` block. With `promptMessageTimestamps`, the model reads the
+ * date and time from each user message instead of the system prompt, so the
+ * prompt prefix stays the same from turn to turn and prompt caches keep hitting.
+ */
+export function prependMessageTimestamp(
+  formattedMessage: FormattedMessageWithContent,
+  sentAt?: string | number | Date | null,
+  timezone?: string | null,
+): void {
+  if (sentAt == null) {
+    return;
+  }
+  const zone = isKnownTimeZone(timezone) ? timezone : undefined;
+  const sent = replaceSpecialVars({ text: '{{current_datetime}}', now: sentAt, timezone: zone });
+  const lines = [`Message sent: ${sent}`];
+  if (zone != null) {
+    lines.push(`Time zone: ${zone}`);
+  }
+  prependContextText(
+    formattedMessage,
+    `<context_update>\n${lines.join('\n')}\n</context_update>`,
+    '\n\n',
   );
 }
 

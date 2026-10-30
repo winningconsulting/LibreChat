@@ -444,6 +444,14 @@ describe('endpointSchema addParams validation', () => {
 });
 
 describe('agentsEndpointSchema', () => {
+  it('keeps promptMessageTimestamps, off unless set', () => {
+    expect(agentsEndpointSchema.parse({}).promptMessageTimestamps).toBeUndefined();
+    expect(
+      agentsEndpointSchema.parse({ promptMessageTimestamps: true }).promptMessageTimestamps,
+    ).toBe(true);
+    expect(agentsEndpointSchema.safeParse({ promptMessageTimestamps: 'yes' }).success).toBe(false);
+  });
+
   it('defaults and bounds Code API upload recovery controls', () => {
     expect(agentsEndpointSchema.parse({}).codeApiUploadConcurrency).toBe(3);
     expect(

@@ -5978,6 +5978,66 @@ describe('AgentClient - titleConvo', () => {
       expect(client.publishRunContextMeta).toHaveBeenCalledTimes(expectSeed ? 1 : 0);
     });
 
+    describe('promptMessageTimestamps', () => {
+      const first = {
+        messageId: 'user-1',
+        parentMessageId: null,
+        sender: 'User',
+        role: 'user',
+        isCreatedByUser: true,
+        text: 'First question',
+        createdAt: '2026-10-26T09:00:00.000Z',
+      };
+      const answer = {
+        messageId: 'assistant-1',
+        parentMessageId: 'user-1',
+        sender: 'Assistant',
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: 'Answer',
+        createdAt: '2026-10-26T09:00:05.000Z',
+      };
+      const next = {
+        messageId: 'user-2',
+        parentMessageId: 'assistant-1',
+        sender: 'User',
+        role: 'user',
+        isCreatedByUser: true,
+        text: 'Next question',
+      };
+      const stamp = (sent) =>
+        `<context_update>\nMessage sent: ${sent}\nTime zone: America/Sao_Paulo\n</context_update>\n\n`;
+
+      const promptContents = async () => {
+        client.setModelBoundStoredMessages([first, answer, next]);
+        const { prompt } = await client.buildMessages([first, answer, next], 'user-2', {}, {});
+        return prompt.map((message) => message.content);
+      };
+
+      beforeEach(() => {
+        mockReq.body.timezone = 'America/Sao_Paulo';
+        mockReq.turnStartedAt = Date.parse('2026-10-30T12:50:00.000Z');
+      });
+
+      it('stamps each user message with its send time in the sender time zone', async () => {
+        mockReq.config.endpoints = { [EModelEndpoint.agents]: { promptMessageTimestamps: true } };
+
+        await expect(promptContents()).resolves.toEqual([
+          `${stamp('2026-10-26 06:00:00 -03:00 (Monday)')}First question`,
+          'Answer',
+          `${stamp('2026-10-30 09:50:00 -03:00 (Friday)')}Next question`,
+        ]);
+      });
+
+      it('leaves the messages unstamped when the setting is off', async () => {
+        await expect(promptContents()).resolves.toEqual([
+          'First question',
+          'Answer',
+          'Next question',
+        ]);
+      });
+    });
+
     it('preserves persisted source identity through both agent formatting passes', async () => {
       mockReq.config.filters = {
         messages: {
