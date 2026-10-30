@@ -616,6 +616,10 @@ endpoints:
   #     create_file: 131072
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
+  #   # (optional) State on each user message when it was sent and the sender's time zone, so the
+  #   # model knows the date and time without `{{current_datetime}}` in the instructions, which
+  #   # changes the system prompt at every message and defeats prompt caching. Defaults to false.
+  #   promptMessageTimestamps: false
   #   # (optional) When conversation titles are generated:
   #   #   immediate (default): generate as soon as the request is made, in parallel
   #   #     with the response, from the user's first message (title appears within ~1-2s).
