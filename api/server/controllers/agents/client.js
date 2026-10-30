@@ -127,6 +127,7 @@ const {
   prependQuotes,
   applyAttachmentOnlyText,
   prependMessageTimestamp,
+  resolveTimeZone,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   buildAgentEventActorSkillMessages,
@@ -2549,6 +2550,9 @@ class AgentClient extends BaseClient {
      */
     const stampsMessages =
       this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.promptMessageTimestamps === true;
+    const stampTimeZone = stampsMessages
+      ? resolveTimeZone(this.options.req.body?.timezone)
+      : undefined;
     const stampSendTime = (formattedMessage, message) => {
       if (!stampsMessages || message.isCreatedByUser !== true) {
         return;
@@ -2556,7 +2560,7 @@ class AgentClient extends BaseClient {
       prependMessageTimestamp(
         formattedMessage,
         message.createdAt ?? this.options.req.turnStartedAt,
-        this.options.req.body?.timezone,
+        stampTimeZone,
       );
     };
     /**

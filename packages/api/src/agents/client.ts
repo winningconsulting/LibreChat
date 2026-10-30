@@ -19,6 +19,7 @@ import type { Agent, TMessage } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 import { getSafeErrorMetadata, mergeQuotedText, formatQuotesAsMarkdown } from '~/utils';
 import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
+import { isValidTimezone } from '~/schedules/cadence';
 import Tokenizer from '~/utils/tokenizer';
 
 export const omitTitleOptions: Set<string> = new Set([
@@ -145,16 +146,12 @@ export function prependContextText(
   );
 }
 
-function isKnownTimeZone(timezone?: string | null): timezone is string {
-  if (!timezone) {
-    return false;
+/** The canonical IANA name of the sender's time zone, or undefined when it is missing or unknown. */
+export function resolveTimeZone(timezone?: string | null): string | undefined {
+  if (!timezone || !isValidTimezone(timezone)) {
+    return undefined;
   }
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
-    return true;
-  } catch {
-    return false;
-  }
+  return new Intl.DateTimeFormat('en-US', { timeZone: timezone }).resolvedOptions().timeZone;
 }
 
 /**
@@ -162,20 +159,20 @@ function isKnownTimeZone(timezone?: string | null): timezone is string {
  * `<context_update>` block. With `promptMessageTimestamps`, the model reads the
  * date and time from each user message instead of the system prompt, so the
  * prompt prefix stays the same from turn to turn and prompt caches keep hitting.
+ * `timezone` is a known zone, as `resolveTimeZone` returns it once per request.
  */
 export function prependMessageTimestamp(
   formattedMessage: FormattedMessageWithContent,
   sentAt?: string | number | Date | null,
-  timezone?: string | null,
+  timezone?: string,
 ): void {
   if (sentAt == null) {
     return;
   }
-  const zone = isKnownTimeZone(timezone) ? timezone : undefined;
-  const sent = replaceSpecialVars({ text: '{{current_datetime}}', now: sentAt, timezone: zone });
+  const sent = replaceSpecialVars({ text: '{{current_datetime}}', now: sentAt, timezone });
   const lines = [`Message sent: ${sent}`];
-  if (zone != null) {
-    lines.push(`Time zone: ${zone}`);
+  if (timezone != null) {
+    lines.push(`Time zone: ${timezone}`);
   }
   prependContextText(
     formattedMessage,

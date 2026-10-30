@@ -5979,32 +5979,10 @@ describe('AgentClient - titleConvo', () => {
     });
 
     describe('promptMessageTimestamps', () => {
-      const first = {
-        messageId: 'user-1',
-        parentMessageId: null,
-        sender: 'User',
-        role: 'user',
-        isCreatedByUser: true,
-        text: 'First question',
-        createdAt: '2026-10-26T09:00:00.000Z',
-      };
-      const answer = {
-        messageId: 'assistant-1',
-        parentMessageId: 'user-1',
-        sender: 'Assistant',
-        role: 'assistant',
-        isCreatedByUser: false,
-        text: 'Answer',
-        createdAt: '2026-10-26T09:00:05.000Z',
-      };
-      const next = {
-        messageId: 'user-2',
-        parentMessageId: 'assistant-1',
-        sender: 'User',
-        role: 'user',
-        isCreatedByUser: true,
-        text: 'Next question',
-      };
+      /** Fresh rows per test: buildMessages records token counts on the rows it reads. */
+      let first;
+      let answer;
+      let next;
       const stamp = (sent) =>
         `<context_update>\nMessage sent: ${sent}\nTime zone: America/Sao_Paulo\n</context_update>\n\n`;
 
@@ -6017,6 +5995,32 @@ describe('AgentClient - titleConvo', () => {
       beforeEach(() => {
         mockReq.body.timezone = 'America/Sao_Paulo';
         mockReq.turnStartedAt = Date.parse('2026-10-30T12:50:00.000Z');
+        first = {
+          messageId: 'user-1',
+          parentMessageId: null,
+          sender: 'User',
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'First question',
+          createdAt: '2026-10-26T09:00:00.000Z',
+        };
+        answer = {
+          messageId: 'assistant-1',
+          parentMessageId: 'user-1',
+          sender: 'Assistant',
+          role: 'assistant',
+          isCreatedByUser: false,
+          text: 'Answer',
+          createdAt: '2026-10-26T09:00:05.000Z',
+        };
+        next = {
+          messageId: 'user-2',
+          parentMessageId: 'assistant-1',
+          sender: 'User',
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Next question',
+        };
       });
 
       it('stamps each user message with its send time in the sender time zone', async () => {
@@ -6027,6 +6031,24 @@ describe('AgentClient - titleConvo', () => {
           'Answer',
           `${stamp('2026-10-30 09:50:00 -03:00 (Friday)')}Next question`,
         ]);
+      });
+
+      it('stamps the copy that counts a message carrying file context', async () => {
+        mockReq.config.endpoints = { [EModelEndpoint.agents]: { promptMessageTimestamps: true } };
+        const withFile = { ...next, fileContext: 'FILE-CONTEXT' };
+        client.setModelBoundStoredMessages([first, answer, withFile]);
+
+        await client.buildMessages([first, answer, withFile], 'user-2', {}, {});
+
+        const counted = require('@librechat/api').countFormattedMessageTokens.mock.calls.map(
+          ([message]) => message,
+        );
+        expect(counted).toContainEqual(
+          expect.objectContaining({
+            messageId: 'user-2',
+            content: `${stamp('2026-10-30 09:50:00 -03:00 (Friday)')}Next question`,
+          }),
+        );
       });
 
       it('leaves the messages unstamped when the setting is off', async () => {
