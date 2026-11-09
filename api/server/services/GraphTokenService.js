@@ -19,7 +19,13 @@ async function getGraphApiToken(user, accessToken, scopes, fromCache = true) {
       `[GraphTokenService] Failed to acquire Graph API token for user ${user.openidId}:`,
       error,
     );
-    throw new Error(`Graph token acquisition failed: ${error.message}`);
+    const wrapped = new Error(`Graph token acquisition failed: ${error.message}`);
+    wrapped.cause = error;
+    /** A transient IdP failure must stay retryable so the caller does not demand a new sign-in. */
+    if (error?.retryable === true) {
+      wrapped.retryable = true;
+    }
+    throw wrapped;
   }
 }
 

@@ -1014,6 +1014,7 @@ describe('MCPManager', () => {
         expect.objectContaining({
           user: mockUser,
           graphTokenResolver: mockGraphTokenResolver,
+          requireResolution: true,
         }),
       );
     });
@@ -1220,16 +1221,18 @@ describe('MCPManager', () => {
         expect.objectContaining({
           user: mockUser,
           graphTokenResolver: undefined,
+          requireResolution: false,
         }),
       );
     });
 
-    it('should handle graph token resolution failure gracefully', async () => {
+    it('fails the tool call when the Graph token cannot be resolved', async () => {
       const serverConfig = createServerConfigWithGraphPlaceholder();
 
-      // Simulate resolution failure - returns original value unchanged
-      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
-        async (options) => options,
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockRejectedValue(
+        new OpenIDReauthRequiredError(
+          'Microsoft 365 needs a fresh sign-in. Please sign out and sign in again.',
+        ),
       );
 
       mockAppConnections({
@@ -1240,7 +1243,6 @@ describe('MCPManager', () => {
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
-      // Should not throw, even when token resolution fails
       await expect(
         manager.callTool({
           user: mockUser as IUser,
@@ -1252,14 +1254,81 @@ describe('MCPManager', () => {
           >[0]['flowManager'],
           graphTokenResolver: mockGraphTokenResolver,
         }),
-      ).resolves.toBeDefined();
+      ).rejects.toBeInstanceOf(OpenIDReauthRequiredError);
 
-      // Headers should contain the unresolved placeholder
-      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+      expect(mockConnection.setRequestHeaders).not.toHaveBeenCalled();
+    });
+
+    it('exchanges the live session access token instead of the request snapshot', async () => {
+      const serverConfig = createServerConfigWithGraphPlaceholder();
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({
+        access_token: 'live-access',
+        expires_at: 1_800_000_000,
+      });
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        graphTokenResolver: mockGraphTokenResolver,
+        upstreamTokenProvider,
+      });
+
+      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
+        serverConfig,
         expect.objectContaining({
-          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+          requireResolution: true,
+          user: expect.objectContaining({
+            federatedTokens: expect.objectContaining({ access_token: 'live-access' }),
+          }),
         }),
       );
+      expect(mockUser.federatedTokens).toBeUndefined();
+    });
+
+    it('stops the tool call when the session refresh is rejected', async () => {
+      const serverConfig = createServerConfigWithGraphPlaceholder();
+      const upstreamTokenProvider = jest.fn().mockRejectedValue(new Error('invalid_grant'));
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(
+        manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          graphTokenResolver: mockGraphTokenResolver,
+          upstreamTokenProvider,
+        }),
+      ).rejects.toBeInstanceOf(OpenIDReauthRequiredError);
+
+      expect(graphUtils.preProcessGraphTokens).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ requireResolution: true }),
+      );
+      expect(mockConnection.setRequestHeaders).not.toHaveBeenCalled();
     });
 
     it('should resolve graph tokens in env variables', async () => {

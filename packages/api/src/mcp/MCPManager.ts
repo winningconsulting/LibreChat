@@ -29,9 +29,17 @@ import {
   resolveServerInstructions,
 } from './utils';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
-import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } from './errors';
+import {
+  MCPAuthenticationRefreshError,
+  MCPAuthenticationRejectedError,
+  isMCPTransportAuthenticationError,
+} from './errors';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
-import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
+import {
+  createLazyOboUpstreamTokenProvider,
+  awaitOboOperation,
+  isRetryableOboExchangeError,
+} from '~/mcp/oauth/obo';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerCatalogRecoveryTracker } from './catalog/recovery';
@@ -42,7 +50,9 @@ import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
-import { preProcessGraphTokens } from '~/utils/graph';
+import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
+import { refreshUserForGraphToken } from './graphSession';
 import { isOwnedAbortError } from '~/utils/errors';
 import { withMCPRequestSignal } from './signal';
 import { formatToolContent } from './parsers';
@@ -1277,14 +1287,46 @@ Please follow these instructions when using tools from the respective MCP server
         disposeAfterCall = ephemeralConnection && !requestScopedConnections;
 
         /** Plugin-authored placeholders must not resolve against the user's Graph token. */
-        const graphProcessedConfig =
-          isDbSourced || isPluginSourced(rawConfig)
-            ? (rawConfig as t.MCPOptions)
-            : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+        const resolvesGraphPlaceholder =
+          !isDbSourced &&
+          !isPluginSourced(rawConfig) &&
+          mcpOptionsContainGraphTokenPlaceholder(rawConfig as t.MCPOptions);
+        const graphUser =
+          resolvesGraphPlaceholder && user
+            ? await refreshUserForGraphToken({
                 user,
-                graphTokenResolver,
-                scopes: process.env.GRAPH_API_SCOPES,
-              });
+                upstreamTokenProvider,
+                signal: options?.signal,
+              })
+            : user;
+        let graphProcessedConfig: t.MCPOptions;
+        try {
+          graphProcessedConfig =
+            isDbSourced || isPluginSourced(rawConfig)
+              ? (rawConfig as t.MCPOptions)
+              : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+                  user: graphUser,
+                  graphTokenResolver,
+                  scopes: process.env.GRAPH_API_SCOPES,
+                  /**
+                   * A tool call that still holds the placeholder would send it to Graph,
+                   * which answers that the token could not be read.
+                   */
+                  requireResolution: resolvesGraphPlaceholder,
+                });
+        } catch (error) {
+          if (
+            isOwnedAbortError(error, options?.signal) ||
+            error instanceof OpenIDReauthRequiredError ||
+            error instanceof MCPAuthenticationRefreshError
+          ) {
+            throw error;
+          }
+          if (isRetryableOboExchangeError(error)) {
+            throw new MCPAuthenticationRefreshError(error);
+          }
+          throw error;
+        }
         const directBearerRecovery = usesDirectOpenIDBearerRecovery(rawConfig);
         const bearerConfig = await resolveDirectOpenIDBearerConfig({
           config: graphProcessedConfig,

@@ -3,9 +3,14 @@ import type { IUser } from '@librechat/data-schemas';
 import {
   GRAPH_TOKEN_PLACEHOLDER,
   DEFAULT_GRAPH_SCOPES,
+  OpenIDReauthRequiredError,
   extractOpenIDTokenInfo,
   isOpenIDTokenValid,
 } from './oidc';
+
+/** Shown when a Graph call would otherwise go out with the unresolved placeholder. */
+const GRAPH_REAUTH_MESSAGE =
+  'Microsoft 365 needs a fresh sign-in. Please sign out and sign in again.';
 
 /**
  * Pre-computed regex for matching the Graph token placeholder.
@@ -51,6 +56,54 @@ export interface GraphTokenOptions {
   user?: IUser;
   graphTokenResolver?: GraphTokenResolver;
   scopes?: string;
+  /**
+   * A tool call must not send the literal placeholder to Microsoft Graph.
+   * Callers that only inspect configuration leave this unset and keep the template.
+   */
+  requireResolution?: boolean;
+}
+
+/** Copies a live upstream token set onto the user snapshot used for the Graph exchange. */
+export function userWithUpstreamAccessToken(
+  user: IUser,
+  tokens: {
+    access_token?: string;
+    id_token?: string;
+    refresh_token?: string;
+    expires_at?: number;
+  },
+): IUser {
+  if (!tokens.access_token) {
+    return user;
+  }
+  return {
+    ...user,
+    federatedTokens: {
+      access_token: tokens.access_token,
+      id_token: tokens.id_token,
+      refresh_token: tokens.refresh_token,
+      expires_at: tokens.expires_at,
+    },
+  } as IUser;
+}
+
+function isTaggedRetryable(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error != null &&
+    (error as { retryable?: unknown }).retryable === true
+  );
+}
+
+function unresolvedGraphCredential(cause?: unknown): Error {
+  if (isTaggedRetryable(cause)) {
+    return cause as Error;
+  }
+  const error = new OpenIDReauthRequiredError(GRAPH_REAUTH_MESSAGE);
+  if (cause !== undefined) {
+    error.cause = cause;
+  }
+  return error;
 }
 
 /**
@@ -136,13 +189,20 @@ export async function resolveGraphTokenPlaceholder(
     return value;
   }
 
-  const { user, graphTokenResolver, scopes } = options;
+  const { user, graphTokenResolver, scopes, requireResolution } = options;
+
+  const fail = (cause?: unknown): string => {
+    if (requireResolution) {
+      throw unresolvedGraphCredential(cause);
+    }
+    return value;
+  };
 
   if (!user || !graphTokenResolver) {
     logger.warn(
       '[resolveGraphTokenPlaceholder] User or graphTokenResolver not provided, cannot resolve Graph token',
     );
-    return value;
+    return fail();
   }
 
   const tokenInfo = extractOpenIDTokenInfo(user);
@@ -150,12 +210,12 @@ export async function resolveGraphTokenPlaceholder(
     logger.warn(
       '[resolveGraphTokenPlaceholder] No valid OpenID token available for Graph token exchange',
     );
-    return value;
+    return fail();
   }
 
   if (!tokenInfo.accessToken) {
     logger.warn('[resolveGraphTokenPlaceholder] No access token available for OBO exchange');
-    return value;
+    return fail();
   }
 
   try {
@@ -174,10 +234,10 @@ export async function resolveGraphTokenPlaceholder(
     logger.warn(
       '[resolveGraphTokenPlaceholder] Graph token exchange did not return an access token',
     );
-    return value;
+    return fail();
   } catch (error) {
     logger.error('[resolveGraphTokenPlaceholder] Failed to exchange token for Graph API:', error);
-    return value;
+    return fail(error);
   }
 }
 

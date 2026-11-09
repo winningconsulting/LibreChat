@@ -7,6 +7,7 @@ import {
   resolveGraphTokenPlaceholder,
   resolveGraphTokensInRecord,
   preProcessGraphTokens,
+  userWithUpstreamAccessToken,
 } from './graph';
 
 // Mock the logger
@@ -18,14 +19,24 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 // Mock the oidc module
-jest.mock('./oidc', () => ({
-  GRAPH_TOKEN_PLACEHOLDER: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
-  DEFAULT_GRAPH_SCOPES: 'https://graph.microsoft.com/.default',
-  extractOpenIDTokenInfo: jest.fn(),
-  isOpenIDTokenValid: jest.fn(),
-}));
+jest.mock('./oidc', () => {
+  class OpenIDReauthRequiredError extends Error {
+    readonly statusCode = 401;
+    constructor(message: string) {
+      super(message);
+      this.name = 'OpenIDReauthRequiredError';
+    }
+  }
+  return {
+    GRAPH_TOKEN_PLACEHOLDER: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+    DEFAULT_GRAPH_SCOPES: 'https://graph.microsoft.com/.default',
+    OpenIDReauthRequiredError,
+    extractOpenIDTokenInfo: jest.fn(),
+    isOpenIDTokenValid: jest.fn(),
+  };
+});
 
-import { extractOpenIDTokenInfo, isOpenIDTokenValid } from './oidc';
+import { extractOpenIDTokenInfo, isOpenIDTokenValid, OpenIDReauthRequiredError } from './oidc';
 
 const mockExtractOpenIDTokenInfo = extractOpenIDTokenInfo as jest.Mock;
 const mockIsOpenIDTokenValid = isOpenIDTokenValid as jest.Mock;
@@ -284,6 +295,57 @@ describe('Graph Token Utilities', () => {
         'custom-scope',
         true,
       );
+    });
+
+    it('asks for a new sign-in instead of leaving the placeholder when resolution is required', async () => {
+      mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'access-token' });
+      mockIsOpenIDTokenValid.mockReturnValue(false);
+
+      await expect(
+        resolveGraphTokenPlaceholder('Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}', {
+          user: mockUser as Partial<IUser> as IUser,
+          graphTokenResolver: mockGraphTokenResolver,
+          requireResolution: true,
+        }),
+      ).rejects.toBeInstanceOf(OpenIDReauthRequiredError);
+    });
+
+    it('keeps a retryable exchange failure retryable when resolution is required', async () => {
+      mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'access-token' });
+      mockIsOpenIDTokenValid.mockReturnValue(true);
+      const transient = Object.assign(new Error('temporarily unavailable'), { retryable: true });
+      const failingResolver: GraphTokenResolver = jest.fn().mockRejectedValue(transient);
+
+      await expect(
+        resolveGraphTokenPlaceholder('Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}', {
+          user: mockUser as Partial<IUser> as IUser,
+          graphTokenResolver: failingResolver,
+          requireResolution: true,
+        }),
+      ).rejects.toBe(transient);
+    });
+  });
+
+  describe('userWithUpstreamAccessToken', () => {
+    it('replaces the snapshot access token with the live one', () => {
+      const user = {
+        id: 'user-123',
+        federatedTokens: { access_token: 'stale' },
+      } as IUser;
+
+      const refreshed = userWithUpstreamAccessToken(user, {
+        access_token: 'live-access',
+        id_token: 'live-id',
+        expires_at: 1_800_000_000,
+      });
+
+      expect(refreshed.federatedTokens).toEqual({
+        access_token: 'live-access',
+        id_token: 'live-id',
+        refresh_token: undefined,
+        expires_at: 1_800_000_000,
+      });
+      expect(user.federatedTokens?.access_token).toBe('stale');
     });
   });
 
