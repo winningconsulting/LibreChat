@@ -486,6 +486,19 @@ describe('prependMessageTimestamp', () => {
 
     expect(message.content).toBe('Question');
   });
+
+  it('states the same minute for a turn start and a later saved time', () => {
+    const currentTurn: FormattedMessageWithContent = { content: 'Question' };
+    const laterTurn: FormattedMessageWithContent = { content: 'Question' };
+
+    prependMessageTimestamp(currentTurn, Date.parse('2026-10-26T09:14:03.200Z'), 'Europe/Lisbon');
+    prependMessageTimestamp(laterTurn, new Date('2026-10-26T09:14:59.900Z'), 'Europe/Lisbon');
+
+    const expected =
+      '<context_update>\nMessage sent: 2026-10-26 09:14:00 +00:00 (Monday)\nTime zone: Europe/Lisbon\n</context_update>\n\nQuestion';
+    expect(currentTurn.content).toBe(expected);
+    expect(laterTurn.content).toBe(expected);
+  });
 });
 
 describe('resolveTimeZone', () => {

@@ -154,12 +154,16 @@ export function resolveTimeZone(timezone?: string | null): string | undefined {
   return new Intl.DateTimeFormat('en-US', { timeZone: timezone }).resolvedOptions().timeZone;
 }
 
+const MS_PER_MINUTE = 60_000;
+
 /**
  * Prepends when a user message was sent, in the sender's time zone, as a
  * `<context_update>` block. With `promptMessageTimestamps`, the model reads the
  * date and time from each user message instead of the system prompt, so the
  * prompt prefix stays the same from turn to turn and prompt caches keep hitting.
  * `timezone` is a known zone, as `resolveTimeZone` returns it once per request.
+ * The time is cut to the minute because the turn that sends a message states the
+ * turn's start and later turns the saved `createdAt`, and both must read the same.
  */
 export function prependMessageTimestamp(
   formattedMessage: FormattedMessageWithContent,
@@ -169,7 +173,8 @@ export function prependMessageTimestamp(
   if (sentAt == null) {
     return;
   }
-  const sent = replaceSpecialVars({ text: '{{current_datetime}}', now: sentAt, timezone });
+  const sentMinute = Math.floor(new Date(sentAt).getTime() / MS_PER_MINUTE) * MS_PER_MINUTE;
+  const sent = replaceSpecialVars({ text: '{{current_datetime}}', now: sentMinute, timezone });
   const lines = [`Message sent: ${sent}`];
   if (timezone != null) {
     lines.push(`Time zone: ${timezone}`);
