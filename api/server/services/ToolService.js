@@ -21,7 +21,6 @@ const {
   supportsProgrammaticCodeExecution,
   getCodeFileLocation,
   getMissingCustomUserVars,
-  buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
   getReplayablePendingMCPOAuthStart,
   getMCPServerNamesFromTools,
@@ -1468,7 +1467,6 @@ async function loadToolDefinitionsWrapper({
 
   if (hasWebSearch) {
     toolContextMap[Tools.web_search] = buildWebSearchContext();
-    dynamicToolContextMap[Tools.web_search] = buildWebSearchDynamicContext(req.turnStartedAt);
   }
 
   /**
