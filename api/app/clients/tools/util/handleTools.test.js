@@ -1021,6 +1021,26 @@ describe('Tool Handlers', () => {
     });
   });
 
+  describe('web_search instructions', () => {
+    it('carry no date or time that changes between requests', async () => {
+      const { toolContextMap, dynamicToolContextMap } = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.web_search],
+        webSearch: {},
+        options: {
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: {},
+            turnStartedAt: Date.parse('2026-01-02T03:04:05.000Z'),
+          },
+        },
+      });
+
+      expect(toolContextMap[Tools.web_search]).toEqual(expect.any(String));
+      expect(dynamicToolContextMap).toEqual({});
+    });
+  });
+
   describe('web_search SSRF-safe agent wiring', () => {
     const buildReq = () => ({
       user: { id: fakeUser._id.toString(), role: 'USER' },

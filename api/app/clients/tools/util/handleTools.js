@@ -24,7 +24,6 @@ const {
   createAskUserQuestionTool,
   ASK_USER_QUESTION_TOOL_NAME,
   resolveWebSearchSSRFAgents,
-  buildWebSearchDynamicContext,
   codeExecutionAuthHeaders,
   getCodeFileLocation,
   resolveCodeExecutionContext,
@@ -469,7 +468,6 @@ const loadTools = async ({
       );
       requestedTools[tool] = async () => {
         toolContextMap[tool] = buildWebSearchContext();
-        dynamicToolContextMap[tool] = buildWebSearchDynamicContext(options.req?.turnStartedAt);
         return createSearchTool({
           ...result.authResult,
           httpAgent,

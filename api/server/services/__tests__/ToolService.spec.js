@@ -4265,6 +4265,21 @@ describe('ToolService - Action Capability Gating', () => {
       expect(callArgs.tools).toContain(Tools.web_search);
     });
 
+    it('adds no web search date or time to the dynamic tool context', async () => {
+      const req = createMockReq(capabilities);
+      req.turnStartedAt = Date.parse('2026-01-02T03:04:05.000Z');
+
+      const result = await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.web_search] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolContextMap[Tools.web_search]).toEqual(expect.any(String));
+      expect(result.dynamicToolContextMap).toEqual({});
+    });
+
     it('keeps web_search in the runtime loader when the role grants it', async () => {
       await loadAgentTools({
         req: createMockReq(capabilities),
