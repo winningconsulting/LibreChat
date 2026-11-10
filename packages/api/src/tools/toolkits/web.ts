@@ -5,8 +5,6 @@ export function buildWebSearchContext(): string {
   return `# \`${Tools.web_search}\`:
 Use this tool when the user's request calls for it, whether directly, indirectly, or implicitly, or when answering requires information that is current, real-time, or otherwise beyond your own knowledge; for questions you can answer reliably on your own, respond directly without searching. When searching, execute immediately without preface, then provide a brief summary addressing the query directly, then structure your response with clear Markdown formatting (## headers, lists, tables). Cite sources properly, tailor tone to query type, and provide comprehensive details.
 
-Use the current date and time given in the conversation when recency matters.
-
 **CITATION FORMAT - UNICODE ESCAPE SEQUENCES ONLY:**
 Use these EXACT escape sequences (copy verbatim): \\ue202 (before each anchor), \\ue200 (group start), \\ue201 (group end), \\ue203 (highlight start), \\ue204 (highlight end)
 
