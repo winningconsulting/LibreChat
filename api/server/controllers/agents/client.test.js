@@ -6058,6 +6058,32 @@ describe('AgentClient - titleConvo', () => {
           'Next question',
         ]);
       });
+
+      it('leaves the web search date and time out of the instructions', async () => {
+        mockReq.config.endpoints = { [EModelEndpoint.agents]: { promptMessageTimestamps: true } };
+        client.options.agent.dynamicToolContextMap = {
+          web_search: 'Conversation Date & Time: 2026-10-30T12:50:00.000Z',
+          execute_code: 'Files available',
+        };
+
+        await promptContents();
+
+        expect(client.options.agent.dynamicToolContextMap).toEqual({
+          execute_code: 'Files available',
+        });
+      });
+
+      it('keeps the web search date and time when the setting is off', async () => {
+        client.options.agent.dynamicToolContextMap = {
+          web_search: 'Conversation Date & Time: 2026-10-30T12:50:00.000Z',
+        };
+
+        await promptContents();
+
+        expect(client.options.agent.dynamicToolContextMap).toEqual({
+          web_search: 'Conversation Date & Time: 2026-10-30T12:50:00.000Z',
+        });
+      });
     });
 
     it('preserves persisted source identity through both agent formatting passes', async () => {
@@ -9242,6 +9268,32 @@ describe('AgentClient - resumeCompletion content protection', () => {
         },
       ]);
     require('~/models').getFiles.mockReset().mockResolvedValue([]);
+  });
+
+  it('leaves the web search date and time out of a resumed run with message timestamps', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: {
+          channel_values: { messages: [{ _getType: () => 'human', content: 'safe' }] },
+        },
+      }),
+    });
+    mockCreateRun.mockRejectedValue(new Error('stop after building the run'));
+    const context = makeContext();
+    context.options.req.config.endpoints[EModelEndpoint.agents].promptMessageTimestamps = true;
+    context.options.agent.dynamicToolContextMap = {
+      web_search: 'Conversation Date & Time: 2026-10-30T12:50:00.000Z',
+      execute_code: 'Files available',
+    };
+
+    await AgentClient.prototype.resumeCompletion
+      .call(context, { resumeValue: {} })
+      .catch(() => undefined);
+
+    expect(mockCreateRun).toHaveBeenCalled();
+    expect(context.options.agent.dynamicToolContextMap).toEqual({
+      execute_code: 'Files available',
+    });
   });
 
   it('blocks checkpoint user content before rebuilding the run', async () => {

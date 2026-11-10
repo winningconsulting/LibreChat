@@ -216,6 +216,7 @@ const {
   removeNullishValues,
   stripLangChainTroubleshootingUrl,
   DEFAULT_MEMORY_MAX_INPUT_TOKENS,
+  Tools,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -357,6 +358,21 @@ function getUserFacingRequestError(baseMessage, error, appConfig) {
     return baseMessage;
   }
   return `${baseMessage}: ${message}`;
+}
+
+/**
+ * With `promptMessageTimestamps`, every user message states when it was sent, so the web search
+ * date and time is left out of the instructions, which then stay the same from turn to turn.
+ */
+function omitWebSearchRuntimeContext(req, agents) {
+  if (req?.config?.endpoints?.[EModelEndpoint.agents]?.promptMessageTimestamps !== true) {
+    return;
+  }
+  for (const agent of agents) {
+    if (agent?.dynamicToolContextMap) {
+      delete agent.dynamicToolContextMap[Tools.web_search];
+    }
+  }
 }
 
 class AgentClient extends BaseClient {
@@ -2293,6 +2309,7 @@ class AgentClient extends BaseClient {
       this.contextMeta = undefined;
       this.compactionSemanticIndexSnapshot = undefined;
     }
+    omitWebSearchRuntimeContext(this.options.req, this.getEventActorAgents());
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
@@ -5415,6 +5432,7 @@ class AgentClient extends BaseClient {
         this.options.agent,
         ...(this.agentConfigs?.size > 0 ? this.agentConfigs.values() : []),
       ]);
+      omitWebSearchRuntimeContext(this.options.req, agents);
       const dynamicToolContexts = getDynamicToolContexts(agents);
       const liveFiles = Array.isArray(this.options.attachments)
         ? [...this.options.attachments]
