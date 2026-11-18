@@ -195,7 +195,6 @@ describe('usePaletteEntries', () => {
 
   it('lists the built-in tools in a fixed order, servers last', () => {
     expect(keysOf(entries().result)).toEqual([
-      'builtin:web_search',
       'builtin:execute_code',
       'builtin:file_search',
       'builtin:skills',
@@ -217,26 +216,14 @@ describe('usePaletteEntries', () => {
   });
 
   it.each([false, true])(
-    'withholds restored pinned search (active=%s) from both the palette and prompt bar when its capability is disabled',
+    'never offers web search, even pinned (active=%s) with its permission and capability on',
     (active) => {
       const webSearch = toggle(active, true);
       mockContext = { ...fullContext(), webSearch };
-      const { result, rerender } = entries();
-      expect(result.current.find((item) => item.key === 'builtin:web_search')).toEqual(
-        expect.objectContaining({ pinned: true, active }),
-      );
-
-      mockCapabilities = { ...allCapabilities, webSearchEnabled: false };
-      rerender();
+      const { result } = entries();
       expect(keysOf(result)).not.toContain('builtin:web_search');
       expect(webSearch.setIsPinned).not.toHaveBeenCalled();
       expect(webSearch.debouncedChange).not.toHaveBeenCalled();
-
-      mockCapabilities = { ...allCapabilities };
-      rerender();
-      expect(result.current.find((item) => item.key === 'builtin:web_search')).toEqual(
-        expect.objectContaining({ pinned: true, active }),
-      );
     },
   );
 
@@ -277,10 +264,10 @@ describe('usePaletteEntries', () => {
 
   describe('on state', () => {
     it('reads each tool from its own toggle', () => {
-      mockContext = { ...fullContext(), webSearch: toggle(true) };
+      mockContext = { ...fullContext(), codeInterpreter: toggle(true) };
       const listed = entries().result.current;
-      expect(listed.find((item) => item.key === 'builtin:web_search')?.active).toBe(true);
-      expect(listed.find((item) => item.key === 'builtin:execute_code')?.active).toBe(false);
+      expect(listed.find((item) => item.key === 'builtin:execute_code')?.active).toBe(true);
+      expect(listed.find((item) => item.key === 'builtin:file_search')?.active).toBe(false);
     });
 
     it('marks a server on when it is among the selected values', () => {
@@ -298,17 +285,17 @@ describe('usePaletteEntries', () => {
       const context = fullContext();
       mockContext = context;
       const listed = entries().result.current;
-      act(() => listed.find((item) => item.key === 'builtin:web_search')?.onSelect());
-      expect(context.webSearch.debouncedChange).toHaveBeenCalledWith({ value: true });
-      expect(context.codeInterpreter.debouncedChange).not.toHaveBeenCalled();
+      act(() => listed.find((item) => item.key === 'builtin:execute_code')?.onSelect());
+      expect(context.codeInterpreter.debouncedChange).toHaveBeenCalledWith({ value: true });
+      expect((context.fileSearch as ToggleFixture).debouncedChange).not.toHaveBeenCalled();
     });
 
     it('turns a tool back off from its on state', () => {
-      const context = { ...fullContext(), webSearch: toggle(true) };
+      const context = { ...fullContext(), codeInterpreter: toggle(true) };
       mockContext = context;
       const listed = entries().result.current;
-      act(() => listed.find((item) => item.key === 'builtin:web_search')?.onSelect());
-      expect(context.webSearch.debouncedChange).toHaveBeenCalledWith({ value: false });
+      act(() => listed.find((item) => item.key === 'builtin:execute_code')?.onSelect());
+      expect(context.codeInterpreter.debouncedChange).toHaveBeenCalledWith({ value: false });
     });
 
     it('returns a mode pill to the default when it is already the stored mode', () => {

@@ -5,7 +5,6 @@ import { MCPIcon } from '@librechat/client';
 import { pendingManualSkillsByConvoId } from '@librechat/chat/react';
 import {
   Brain,
-  Globe,
   Layers,
   Settings,
   X,
@@ -14,7 +13,6 @@ import {
   SquareChevronRight,
 } from 'lucide-react';
 import {
-  AuthType,
   Permissions,
   ArtifactModes,
   PermissionBits,
@@ -179,19 +177,9 @@ export default function usePaletteEntries({
     pendingManualSkillsByConvoId(conversationId),
   );
 
-  const {
-    codeEnabled,
-    memoryEnabled,
-    webSearchEnabled,
-    artifactsEnabled,
-    fileSearchEnabled,
-    skillsEnabled,
-  } = useAgentCapabilities(context?.agentsConfig?.capabilities ?? defaultAgentCapabilities);
+  const { codeEnabled, memoryEnabled, artifactsEnabled, fileSearchEnabled, skillsEnabled } =
+    useAgentCapabilities(context?.agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const canUseWebSearch = useHasAccess({
-    permissionType: PermissionTypes.WEB_SEARCH,
-    permission: Permissions.USE,
-  });
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
     permission: Permissions.USE,
@@ -269,16 +257,7 @@ export default function usePaletteEntries({
       return entries;
     }
 
-    const {
-      webSearch,
-      codeInterpreter,
-      fileSearch,
-      skills,
-      memory,
-      artifacts,
-      mcpServerManager,
-      searchApiKeyForm,
-    } = context;
+    const { codeInterpreter, fileSearch, skills, memory, artifacts, mcpServerManager } = context;
 
     const pushTool = (
       itemId: string,
@@ -304,37 +283,6 @@ export default function usePaletteEntries({
         modes,
       });
     };
-
-    if (toolsEnabled && canUseWebSearch && webSearchEnabled) {
-      /* Same rule the old tools menu used for its gear: only credentials the
-         user can actually provide are editable. Toggling opens the key dialog
-         on its own while unauthenticated, so this pill is what keeps existing
-         credentials reachable: editing, switching provider or revoking. */
-      const authTypes = webSearch.authData?.authTypes ?? [];
-      const searchConfigurable =
-        authTypes.length === 0 ||
-        !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
-      pushTool(
-        'web_search',
-        localize('com_ui_web_search'),
-        <Globe className="icon-md" aria-hidden="true" />,
-        webSearch.toggleState === true,
-        webSearch.isPinned === true,
-        () => webSearch.debouncedChange({ value: !webSearch.toggleState }),
-        () => webSearch.setIsPinned(false),
-        searchConfigurable && searchApiKeyForm != null
-          ? [
-              {
-                id: 'configure',
-                label: localize('com_ui_configure'),
-                active: false,
-                icon: <Settings className="h-4 w-4" aria-hidden="true" />,
-                onSelect: () => searchApiKeyForm.setIsDialogOpen(true),
-              },
-            ]
-          : undefined,
-      );
-    }
 
     if (toolsEnabled && canRunCode && codeEnabled) {
       pushTool(
@@ -621,8 +569,6 @@ export default function usePaletteEntries({
     memoryEnabled,
     agentSkillIds,
     skillsListable,
-    canUseWebSearch,
-    webSearchEnabled,
     artifactsEnabled,
     canUseFileSearch,
     fileSearchEnabled,
