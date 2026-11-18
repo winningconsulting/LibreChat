@@ -49,6 +49,7 @@ jest.mock('@librechat/api', () => ({
   feedSubagentAggregator: jest.requireActual('@librechat/api').feedSubagentAggregator,
   createToolTimingAdapter: jest.requireActual('@librechat/api').createToolTimingAdapter,
   stampCommandExecutor: jest.requireActual('@librechat/api').stampCommandExecutor,
+  enqueueStoredFileAttachments: jest.requireActual('@librechat/api').enqueueStoredFileAttachments,
 }));
 
 jest.mock('@librechat/data-schemas', () => ({

@@ -11,6 +11,7 @@ import type {
   UpstreamTokenProvider,
   UpstreamTokenProviderResolver,
 } from '~/mcp/oauth/obo';
+import type { PersistResourceBlobs, ResourceBlobPersistContext } from './resources';
 import type { ScheduledMCPInvocation } from '~/schedules/authorization/execution';
 import type { MCPAppOperationContext, MCPAppValidationContext } from './apps';
 import type { ScheduledMCPBearerInvocation } from '~/schedules/bearer';
@@ -63,6 +64,7 @@ import {
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
 import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
+import { extractAndValidateResourceBlobs, STORED_FILES_ARTIFACT_KEY } from './resources';
 import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
 import { MCPAppOperationBudget, getMCPAppOperationLimits } from './apps/budget';
 import { ScheduledMCPPolicyError } from '~/schedules/authorization/policy';
@@ -1547,6 +1549,8 @@ Please follow these instructions when using tools from the respective MCP server
     mcpApps,
     scheduledMCPInvocation,
     unattended,
+    persistResourceBlobs,
+    resourcePersistContext,
   }: {
     /** See {@link t.UserConnectionContext.unattended}. */
     unattended?: boolean;
@@ -1576,6 +1580,9 @@ Please follow these instructions when using tools from the respective MCP server
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
     mcpApps?: TMCPAppsPolicy;
+    /** Injected storage callback — only used when the server opts in via config */
+    persistResourceBlobs?: PersistResourceBlobs;
+    resourcePersistContext?: Omit<ResourceBlobPersistContext, 'userId' | 'tenantId'>;
   }): Promise<t.FormattedToolResponse> {
     if (scheduledBearerInvocation) requestScopedConnections = scheduledBearerInvocation.context;
     const userId = user?.id;
@@ -2171,6 +2178,14 @@ Please follow these instructions when using tools from the respective MCP server
         }
         this.checkIdleConnections();
         const toolResult = result as t.MCPToolCallResponse;
+        const shouldPersistBlobs =
+          rawConfig.persistResourceBlobs === true && typeof persistResourceBlobs === 'function';
+        const extractedBlobs = shouldPersistBlobs
+          ? extractAndValidateResourceBlobs(toolResult?.content)
+          : undefined;
+        const formattableResult: t.MCPToolCallResponse = extractedBlobs
+          ? { ...toolResult, content: extractedBlobs.content }
+          : toolResult;
         const admittedMCPApps = mcpApps ?? DEFAULT_MCP_APPS_POLICY;
 
         // The app routes reject OBO, Graph-token, and runtime body-placeholder configs, so do not
@@ -2283,9 +2298,9 @@ Please follow these instructions when using tools from the respective MCP server
           resolvedAppResource = undefined;
         }
 
-        return markMCPToolResultError(
+        const formatted = markMCPToolResultError(
           formatToolContent(
-            toolResult,
+            formattableResult,
             provider,
             appCompatible
               ? {
@@ -2299,6 +2314,35 @@ Please follow these instructions when using tools from the respective MCP server
                 }
               : { mcpApps: admittedMCPApps },
           ),
+          toolResult?.isError === true,
+        );
+
+        if (!extractedBlobs?.resources.length || !persistResourceBlobs) {
+          return formatted;
+        }
+
+        if (!userId || !resourcePersistContext?.req) {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `${logPrefix}[${toolName}] persistResourceBlobs requires an authenticated user and request context.`,
+          );
+        }
+
+        const storedFiles = await persistResourceBlobs(extractedBlobs.resources, {
+          ...resourcePersistContext,
+          userId,
+          tenantId: user?.tenantId,
+        });
+        const [text, artifacts] = formatted;
+
+        return markMCPToolResultError(
+          [
+            text,
+            {
+              ...artifacts,
+              [STORED_FILES_ARTIFACT_KEY]: storedFiles,
+            },
+          ] as typeof formatted,
           toolResult?.isError === true,
         );
       } catch (error) {
