@@ -16,7 +16,13 @@ import type {
   TextContent,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { SearchResultData, UIResource, TMCPAppOperationLimits } from 'librechat-data-provider';
+import type {
+  SearchResultData,
+  UIResource,
+  TMCPAppOperationLimits,
+  TFile,
+  FileSources,
+} from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
 import type {
@@ -146,6 +152,29 @@ export type FileSearchSource = {
   [key: string]: unknown;
 };
 
+export type StoredResourceFile = Pick<
+  TFile,
+  | 'file_id'
+  | 'filename'
+  | 'filepath'
+  | 'type'
+  | 'bytes'
+  | 'embedded'
+  | 'object'
+  | 'user'
+  | 'source'
+  | 'context'
+> & {
+  tenantId?: string;
+  conversationId?: string;
+  messageId?: string;
+  toolCallId?: string;
+  storageKey?: string;
+  storageRegion?: string;
+  filterSource?: FileSources;
+  expiresAt?: string | Date;
+};
+
 export type Artifacts =
   | {
       content?: FormattedContent[];
@@ -159,6 +188,7 @@ export type Artifacts =
         fileCitations?: boolean;
       };
       [Tools.web_search]?: SearchResultData;
+      stored_files?: StoredResourceFile[];
       files?: Array<{ id: string; name: string }>;
       session_id?: string;
       file_ids?: string[];

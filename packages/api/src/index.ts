@@ -52,6 +52,7 @@ export * from './mcp/request';
 export * from './mcp/agent';
 export * from './mcp/reinitialize';
 export * from './mcp/icons';
+export * from './mcp/resources';
 /* Utilities */
 export * from './mcp/utils';
 export * from './mcp/domainValidation';
