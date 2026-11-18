@@ -1989,6 +1989,9 @@ export const agentsEndpointSchema = baseEndpointSchema
         .default(DEFAULT_STREAM_KEEPALIVE_INTERVAL_MS),
       /** Graph steps an agent run may take; a run with fewer than 1 cannot take a step. */
       recursionLimit: z.number().int().min(1).optional(),
+      /** States each user message's send time and the sender's time zone on that message, so
+       * the model knows the date and time without either living in the system prompt. */
+      promptMessageTimestamps: z.boolean().optional(),
       disableBuilder: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */
       repositoryInstructions: z
