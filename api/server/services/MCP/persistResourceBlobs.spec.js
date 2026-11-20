@@ -54,6 +54,24 @@ describe('persistResourceBlobs', () => {
     expect(file.height).toBeUndefined();
   });
 
+  it('stores connector files under a name that does not look like a person upload', async () => {
+    await persistResourceBlobs(
+      [
+        {
+          filename: 'report.pdf',
+          mimeType: 'application/pdf',
+          buffer: Buffer.from('%PDF-1.4'),
+          uri: 'x://report.pdf',
+        },
+      ],
+      context,
+    );
+
+    const { fileName } = mockSaveBuffer.mock.calls[0][0];
+    expect(fileName).toMatch(/^mcp-[0-9a-f-]{36}__report\.pdf$/);
+    expect(fileName).not.toMatch(/^[0-9a-f-]{36}__/);
+  });
+
   it('keeps images in the images folder with their size, so the chat shows them as images', async () => {
     const buffer = await sharp({
       create: { width: 3, height: 2, channels: 3, background: '#ffffff' },

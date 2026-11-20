@@ -51,7 +51,8 @@ async function persistResourceBlobs(resources, context) {
     for (const resource of resources) {
       const file_id = uuidv4();
       const safeName = sanitizeFilename(resource.filename);
-      const fileName = `${file_id}__${safeName}`;
+      /** The `mcp-` prefix tells a connector's file apart from a person's upload (`file_id__name`) in the same folder. */
+      const fileName = `mcp-${file_id}__${safeName}`;
       const { basePath, width, height } = await storagePlacement(resource);
       const filepath = await saveBuffer({
         userId,
