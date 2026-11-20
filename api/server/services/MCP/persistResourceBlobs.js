@@ -1,3 +1,4 @@
+const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { FileContext, FileSources } = require('librechat-data-provider');
@@ -5,6 +6,21 @@ const { getStorageMetadata, sanitizeFilename } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const db = require('~/models');
+
+/**
+ * Images go to the images folder with their width and height, which is what makes the chat show them as images
+ * (with a preview and the full-screen viewer) instead of as files to download.
+ *
+ * @param {import('@librechat/api').ValidatedResourceBlob} resource
+ * @returns {Promise<{ basePath: string, width?: number, height?: number }>}
+ */
+async function storagePlacement(resource) {
+  if (!resource.mimeType.startsWith('image/')) {
+    return { basePath: 'uploads' };
+  }
+  const { width, height } = await sharp(resource.buffer).metadata();
+  return { basePath: 'images', width, height };
+}
 
 /**
  * Persists validated MCP resource blobs with the configured file strategy.
@@ -35,12 +51,14 @@ async function persistResourceBlobs(resources, context) {
     for (const resource of resources) {
       const file_id = uuidv4();
       const safeName = sanitizeFilename(resource.filename);
-      const fileName = `${file_id}__${safeName}`;
+      /** The `mcp-` prefix tells a connector's file apart from a person's upload (`file_id__name`) in the same folder. */
+      const fileName = `mcp-${file_id}__${safeName}`;
+      const { basePath, width, height } = await storagePlacement(resource);
       const filepath = await saveBuffer({
         userId,
         buffer: resource.buffer,
         fileName,
-        basePath: 'uploads',
+        basePath,
         tenantId,
       });
       const storageMetadata = getStorageMetadata({
@@ -65,6 +83,7 @@ async function persistResourceBlobs(resources, context) {
           messageId,
           tenantId,
           usage: 0,
+          ...(width && height ? { width, height } : {}),
           ...retentionExpiry,
         },
         true,
@@ -88,6 +107,7 @@ async function persistResourceBlobs(resources, context) {
         storageKey: file.storageKey ?? storageMetadata.storageKey,
         storageRegion: file.storageRegion ?? storageMetadata.storageRegion,
         expiresAt: file.expiresAt ?? file.expiredAt,
+        ...(width && height ? { width: file.width ?? width, height: file.height ?? height } : {}),
       });
     }
 
