@@ -237,6 +237,35 @@ describe('extractAndValidateResourceBlobs', () => {
     expect(result.resources[0].buffer.equals(PNG)).toBe(true);
   });
 
+  it('accepts a JPEG named with either .jpg or .jpeg, keeping its name', () => {
+    const result = extractAndValidateResourceBlobs([
+      resourcePart({
+        uri: 'x://images/photo.jpeg',
+        mimeType: 'image/jpeg',
+        blob: JPEG.toString('base64'),
+      }),
+      resourcePart({
+        uri: 'x://images/PHOTO.JPG',
+        mimeType: 'image/jpeg',
+        blob: JPEG.toString('base64'),
+      }),
+    ]);
+
+    expect(result.resources.map((r) => r.filename)).toEqual(['photo.jpeg', 'PHOTO.JPG']);
+  });
+
+  it('still rejects .jpeg for a type other than JPEG', () => {
+    expect(() =>
+      extractAndValidateResourceBlobs([
+        resourcePart({
+          uri: 'x://images/photo.jpeg',
+          mimeType: 'image/png',
+          blob: PNG.toString('base64'),
+        }),
+      ]),
+    ).toThrow(/does not match MIME type/);
+  });
+
   it('rejects images whose bytes do not match their MIME type', () => {
     expect(() =>
       extractAndValidateResourceBlobs([

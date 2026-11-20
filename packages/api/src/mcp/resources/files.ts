@@ -135,7 +135,9 @@ function assertMimeAndExtension(mimeType: string, filename: string): AllowedMCPR
   const allowed = mimeType as AllowedMCPResourceMimeType;
   const expectedExt = MCP_RESOURCE_MIME_EXTENSIONS[allowed];
   const actualExt = path.extname(filename).toLowerCase();
-  if (actualExt !== expectedExt) {
+  /** A JPEG may also be named `.jpeg`. */
+  const normalizedExt = actualExt === '.jpeg' ? '.jpg' : actualExt;
+  if (normalizedExt !== expectedExt) {
     throw new MCPResourceBlobError(
       `MCP resource blob extension "${actualExt}" does not match MIME type "${mimeType}"`,
     );
