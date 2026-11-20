@@ -430,6 +430,27 @@ describe('applyAdminRefresh', () => {
       ).resolves.toBeDefined();
     });
 
+    it('accepts a {tenantid} template and looks up the token issuer', async () => {
+      const issuer = 'https://login.microsoftonline.com/3d9f8e93-ae32-4173-a290-83e3973c5a41/v2.0';
+      const user = makeUser({ openidIssuer: issuer });
+      const deps = makeDeps(user);
+      const tokenset = makeTokenset({
+        claims: () => ({ sub: SUB, iss: issuer }),
+      });
+
+      await expect(
+        applyAdminRefresh(tokenset, deps, {
+          expectedIssuer: 'https://login.microsoftonline.com/{tenantid}/v2.0',
+        }),
+      ).resolves.toBeDefined();
+
+      const [filter] = (deps.findUsers as jest.Mock).mock.calls[0];
+      expect(filter).toEqual({
+        openidId: SUB,
+        openidIssuer: issuer,
+      });
+    });
+
     it('throws ISSUER_MISMATCH when issuers differ', async () => {
       const deps = makeDeps(makeUser());
       const tokenset = makeTokenset({
@@ -438,6 +459,21 @@ describe('applyAdminRefresh', () => {
 
       await expect(
         applyAdminRefresh(tokenset, deps, { expectedIssuer: 'https://issuer.example.com' }),
+      ).rejects.toMatchObject({ code: 'ISSUER_MISMATCH', status: 401 });
+      expect(deps.findUsers).not.toHaveBeenCalled();
+      expect(deps.mintToken).not.toHaveBeenCalled();
+    });
+
+    it('throws ISSUER_MISMATCH when a token issuer does not fit the template', async () => {
+      const deps = makeDeps(makeUser());
+      const tokenset = makeTokenset({
+        claims: () => ({ sub: SUB, iss: 'https://attacker.example.com' }),
+      });
+
+      await expect(
+        applyAdminRefresh(tokenset, deps, {
+          expectedIssuer: 'https://login.microsoftonline.com/{tenantid}/v2.0',
+        }),
       ).rejects.toMatchObject({ code: 'ISSUER_MISMATCH', status: 401 });
       expect(deps.findUsers).not.toHaveBeenCalled();
       expect(deps.mintToken).not.toHaveBeenCalled();

@@ -53,6 +53,27 @@ export function normalizeOpenIdIssuer(issuer: string | undefined): string | unde
   return normalized.slice(0, -OPENID_DISCOVERY_PATH.length) || undefined;
 }
 
+const issuerTemplateRegexCache = new Map<string, RegExp>();
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** `{tenantid}` in a discovery issuer matches one URL segment of the token issuer. */
+export function issuerMatchesTemplate(expectedIssuer: string, actualIssuer: string): boolean {
+  if (!expectedIssuer.includes('{tenantid}')) {
+    return false;
+  }
+
+  let regex = issuerTemplateRegexCache.get(expectedIssuer);
+  if (!regex) {
+    const escapedTemplate = expectedIssuer.split('{tenantid}').map(escapeRegExp).join('[^/]+');
+    regex = new RegExp(`^${escapedTemplate}$`);
+    issuerTemplateRegexCache.set(expectedIssuer, regex);
+  }
+  return regex.test(actualIssuer);
+}
+
 function getIssuerFromSource(source: OpenIdIssuerSource | null | undefined): string | undefined {
   if (source == null) return undefined;
 

@@ -7,6 +7,7 @@ import type { AdminExchangeResponse } from '~/auth/exchange';
 
 import {
   isUserIssuerAllowed,
+  issuerMatchesTemplate,
   normalizeOpenIdIssuer,
   getIssuerBoundConditions,
 } from '~/auth/openid';
@@ -269,7 +270,10 @@ export async function applyAdminRefresh(
 
   const expected = normalizeOpenIdIssuer(options.expectedIssuer);
   const actual = normalizeOpenIdIssuer(claims.iss);
-  if (expected && actual && expected !== actual) {
+  const tenantTemplateMatch = Boolean(
+    expected && actual && issuerMatchesTemplate(expected, actual),
+  );
+  if (expected && actual && expected !== actual && !tenantTemplateMatch) {
     throw new AdminRefreshError(
       'ISSUER_MISMATCH',
       401,
@@ -277,7 +281,12 @@ export async function applyAdminRefresh(
     );
   }
 
-  const user = await resolveAdminUser(deps, openidId, expected, options);
+  const user = await resolveAdminUser(
+    deps,
+    openidId,
+    tenantTemplateMatch ? actual : expected,
+    options,
+  );
   if (!user) {
     throw new AdminRefreshError('USER_NOT_FOUND', 401, 'No user found for the refreshed identity');
   }

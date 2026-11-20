@@ -10,6 +10,7 @@ import {
   getOpenIdEmail,
   getOpenIdIssuer,
   createOpenIDUser,
+  issuerMatchesTemplate,
   normalizeOpenIdIssuer,
 } from './openid';
 import { recordOpenIDUserLookup } from '~/app/metrics';
@@ -43,6 +44,26 @@ describe('normalizeOpenIdIssuer', () => {
     expect(
       normalizeOpenIdIssuer('https://issuer.example.com/realm/.well-known/openid-configuration'),
     ).toBe('https://issuer.example.com/realm');
+  });
+});
+
+describe('issuerMatchesTemplate', () => {
+  const template = 'https://login.microsoftonline.com/{tenantid}/v2.0';
+
+  it('matches one URL segment in place of {tenantid}', () => {
+    expect(
+      issuerMatchesTemplate(
+        template,
+        'https://login.microsoftonline.com/3d9f8e93-ae32-4173-a290-83e3973c5a41/v2.0',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects an issuer that does not fit the template', () => {
+    expect(issuerMatchesTemplate(template, 'https://attacker.example.com')).toBe(false);
+    expect(issuerMatchesTemplate('https://issuer.example.com', 'https://issuer.example.com')).toBe(
+      false,
+    );
   });
 });
 
