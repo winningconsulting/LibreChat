@@ -40,6 +40,7 @@ jest.mock('@librechat/api', () => ({
   getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
   normalizeOpenIdIssuer: jest.requireActual('@librechat/api').normalizeOpenIdIssuer,
+  issuerMatchesTemplate: jest.requireActual('@librechat/api').issuerMatchesTemplate,
   buildAuthUserDocCacheKey: jest.fn(() => 'auth-user-doc-key'),
   getAuthUserDocCacheMode: jest.fn(() => 'off'),
   getCurrentCachedAuthUserDoc: jest.fn(),
