@@ -13,6 +13,17 @@ function zipBlob(): string {
   return Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00]).toString('base64');
 }
 
+const PNG = Buffer.concat([
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  Buffer.from('png-body'),
+]);
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('jpeg-body')]);
+const WEBP = Buffer.concat([
+  Buffer.from('RIFF'),
+  Buffer.from([1, 0, 0, 0]),
+  Buffer.from('WEBPVP8 '),
+]);
+
 function resourcePart({
   uri,
   mimeType,
@@ -195,6 +206,59 @@ describe('extractAndValidateResourceBlobs', () => {
       ]),
     ).toThrow(new RegExp(`maximum of 1`));
     expect(DEFAULT_MCP_RESOURCE_BLOB_MAX_FILES).toBeGreaterThan(0);
+  });
+
+  it('extracts png, jpeg and webp images and strips them from returned content', () => {
+    const result = extractAndValidateResourceBlobs([
+      { type: 'text', text: 'Made image img_1.' },
+      resourcePart({
+        uri: 'w-image://images/w-image-img_1.png',
+        mimeType: 'image/png',
+        blob: PNG.toString('base64'),
+      }),
+      resourcePart({
+        uri: 'w-image://images/w-image-img_2.jpg',
+        mimeType: 'image/jpeg',
+        blob: JPEG.toString('base64'),
+      }),
+      resourcePart({
+        uri: 'w-image://images/w-image-img_3.webp',
+        mimeType: 'image/webp',
+        blob: WEBP.toString('base64'),
+      }),
+    ]);
+
+    expect(result.content).toEqual([{ type: 'text', text: 'Made image img_1.' }]);
+    expect(result.resources.map((r) => [r.filename, r.mimeType])).toEqual([
+      ['w-image-img_1.png', 'image/png'],
+      ['w-image-img_2.jpg', 'image/jpeg'],
+      ['w-image-img_3.webp', 'image/webp'],
+    ]);
+    expect(result.resources[0].buffer.equals(PNG)).toBe(true);
+  });
+
+  it('rejects images whose bytes do not match their MIME type', () => {
+    expect(() =>
+      extractAndValidateResourceBlobs([
+        resourcePart({
+          uri: 'w-image://images/w-image-img_1.png',
+          mimeType: 'image/png',
+          blob: JPEG.toString('base64'),
+        }),
+      ]),
+    ).toThrow(/not a valid PNG image/);
+  });
+
+  it('keeps rejecting image types it cannot check, such as svg', () => {
+    expect(() =>
+      extractAndValidateResourceBlobs([
+        resourcePart({
+          uri: 'w-image://images/drawing.svg',
+          mimeType: 'image/svg+xml',
+          blob: Buffer.from('<svg/>').toString('base64'),
+        }),
+      ]),
+    ).toThrow(/not allowed/);
   });
 
   it('rejects invalid PDF signatures', () => {

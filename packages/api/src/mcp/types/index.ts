@@ -171,6 +171,9 @@ export type StoredResourceFile = Pick<
   toolCallId?: string;
   storageKey?: string;
   storageRegion?: string;
+  /** Set for images, which the chat shows as images rather than as files. */
+  width?: number;
+  height?: number;
   filterSource?: FileSources;
   expiresAt?: string | Date;
 };

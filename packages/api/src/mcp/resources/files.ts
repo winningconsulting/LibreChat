@@ -8,11 +8,22 @@ export const MCP_RESOURCE_MIME_EXTENSIONS: {
   readonly 'application/pdf': '.pdf';
   readonly 'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx';
   readonly 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx';
+  readonly 'image/png': '.png';
+  readonly 'image/jpeg': '.jpg';
+  readonly 'image/webp': '.webp';
 } = {
   'application/pdf': '.pdf',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/webp': '.webp',
 };
+
+/** Image blobs are kept as images in the conversation (with a preview), not as files to download. */
+export function isImageResourceMimeType(mimeType: string): boolean {
+  return mimeType === 'image/png' || mimeType === 'image/jpeg' || mimeType === 'image/webp';
+}
 
 export type AllowedMCPResourceMimeType = keyof typeof MCP_RESOURCE_MIME_EXTENSIONS;
 
@@ -133,7 +144,37 @@ function assertMimeAndExtension(mimeType: string, filename: string): AllowedMCPR
   return allowed;
 }
 
+function startsWith(buffer: Buffer, bytes: number[], offset = 0): boolean {
+  return (
+    buffer.length >= offset + bytes.length && bytes.every((byte, i) => buffer[offset + i] === byte)
+  );
+}
+
+function hasImageSignature(buffer: Buffer, mimeType: AllowedMCPResourceMimeType): boolean {
+  if (mimeType === 'image/png') {
+    return startsWith(buffer, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  }
+  if (mimeType === 'image/jpeg') {
+    return startsWith(buffer, [0xff, 0xd8, 0xff]);
+  }
+  return (
+    startsWith(buffer, [0x52, 0x49, 0x46, 0x46]) && startsWith(buffer, [0x57, 0x45, 0x42, 0x50], 8)
+  );
+}
+
+function assertImageSignature(buffer: Buffer, mimeType: AllowedMCPResourceMimeType): void {
+  if (!hasImageSignature(buffer, mimeType)) {
+    const label = mimeType.slice('image/'.length).toUpperCase();
+    throw new MCPResourceBlobError(`MCP resource blob is not a valid ${label} image`);
+  }
+}
+
 function assertFileSignature(buffer: Buffer, mimeType: AllowedMCPResourceMimeType): void {
+  if (isImageResourceMimeType(mimeType)) {
+    assertImageSignature(buffer, mimeType);
+    return;
+  }
+
   if (mimeType === 'application/pdf') {
     if (buffer.length < 5 || buffer.subarray(0, 5).toString('utf8') !== '%PDF-') {
       throw new MCPResourceBlobError('MCP resource blob is not a valid PDF');
