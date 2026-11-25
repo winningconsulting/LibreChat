@@ -173,25 +173,66 @@ export function resolveTimeZone(timezone?: string | null): string | undefined {
   return new Intl.DateTimeFormat('en-US', { timeZone: timezone }).resolvedOptions().timeZone;
 }
 
+/** Longest file name an "Attached file" line carries. */
+const ATTACHED_FILE_NAME_LIMIT = 100;
+
 /**
- * Prepends when a user message was sent, in the sender's time zone, as a
- * `<context_update>` block. With `promptMessageTimestamps`, the model reads the
- * date and time from each user message instead of the system prompt, so the
- * prompt prefix stays the same from turn to turn and prompt caches keep hitting.
- * `timezone` is a known zone, as `resolveTimeZone` returns it once per request.
+ * One line per attached file with an id: its name (on one line, without double
+ * quotes, up to 100 characters), its type when known, and its id, so the model
+ * can tell a tool exactly which attachment the person means.
  */
-export function prependMessageTimestamp(
-  formattedMessage: FormattedMessageWithContent,
-  sentAt?: string | number | Date | null,
-  timezone?: string,
-): void {
-  if (sentAt == null) {
-    return;
+export function describeAttachedFiles(files?: TMessage['files'] | null): string[] {
+  if (!Array.isArray(files)) {
+    return [];
   }
-  const sent = replaceSpecialVars({ text: '{{current_datetime}}', now: sentAt, timezone });
-  const lines = [`Message sent: ${sent}`];
-  if (timezone != null) {
-    lines.push(`Time zone: ${timezone}`);
+  const lines: string[] = [];
+  for (const file of files) {
+    if (!file?.file_id) {
+      continue;
+    }
+    const oneLine = String(file.filename ?? '')
+      .replace(/[\s\p{Cc}]+/gu, ' ')
+      .replace(/"/g, "'")
+      .trim();
+    /** Cut by characters, not UTF-16 units, so an emoji is never split in half. */
+    const name =
+      Array.from(oneLine).slice(0, ATTACHED_FILE_NAME_LIMIT).join('').trim() || 'unnamed';
+    const type = file.type ? ` (${file.type})` : '';
+    lines.push(`Attached file: "${name}"${type}, id ${file.file_id}`);
+  }
+  return lines;
+}
+
+/**
+ * Prepends a `<context_update>` block to a user message: when it was sent, in
+ * the sender's time zone, and the files attached to it. Each part is left out
+ * when not given; with none, the message stays as it is. The block depends only
+ * on the stored message, so it is the same from turn to turn and prompt caches
+ * keep hitting. `timezone` is a known zone, as `resolveTimeZone` returns it.
+ */
+export function prependMessageContext(
+  formattedMessage: FormattedMessageWithContent,
+  context: {
+    sentAt?: string | number | Date | null;
+    timezone?: string;
+    files?: TMessage['files'] | null;
+  },
+): void {
+  const lines: string[] = [];
+  if (context.sentAt != null) {
+    const sent = replaceSpecialVars({
+      text: '{{current_datetime}}',
+      now: context.sentAt,
+      timezone: context.timezone,
+    });
+    lines.push(`Message sent: ${sent}`);
+    if (context.timezone != null) {
+      lines.push(`Time zone: ${context.timezone}`);
+    }
+  }
+  lines.push(...describeAttachedFiles(context.files));
+  if (lines.length === 0) {
+    return;
   }
   prependContextText(
     formattedMessage,

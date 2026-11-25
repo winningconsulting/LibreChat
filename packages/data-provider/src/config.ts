@@ -1992,6 +1992,9 @@ export const agentsEndpointSchema = baseEndpointSchema
       /** States each user message's send time and the sender's time zone on that message, so
        * the model knows the date and time without either living in the system prompt. */
       promptMessageTimestamps: z.boolean().optional(),
+      /** Lists the files each user message carried (name, type and id) on that message, so the
+       * model can tell a tool exactly which attachment the person means. */
+      promptAttachedFiles: z.boolean().optional(),
       disableBuilder: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */
       repositoryInstructions: z

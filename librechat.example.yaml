@@ -854,6 +854,11 @@ endpoints:
   #   # model knows the date and time without `{{current_datetime}}` in the instructions, which
   #   # changes the system prompt at every message and defeats prompt caching. Defaults to false.
   #   promptMessageTimestamps: false
+  #   # (optional) List on each user message the files attached to it, with name, type and id, so
+  #   # the model can tell a tool exactly which attachment the person means. With
+  #   # promptMessageTimestamps on too, both go in one block at the start of the message.
+  #   # Defaults to false.
+  #   promptAttachedFiles: false
   #   # (optional) When conversation titles are generated:
   #   #   immediate (default): generate as soon as the request is made, in parallel
   #   #     with the response, from the user's first message (title appears within ~1-2s).

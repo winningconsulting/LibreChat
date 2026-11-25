@@ -6650,6 +6650,131 @@ describe('AgentClient - titleConvo', () => {
       expect(resolve).not.toHaveBeenCalled();
     });
 
+    describe('promptAttachedFiles', () => {
+      /** Fresh rows per test: buildMessages records token counts on the rows it reads. */
+      let first;
+      let answer;
+      let next;
+      const banner = { file_id: 'f1', filename: 'banner.png', type: 'image/png' };
+      const listed =
+        '<context_update>\nAttached file: "banner.png" (image/png), id f1\n</context_update>\n\n';
+
+      const promptContents = async () => {
+        client.setModelBoundStoredMessages([first, answer, next]);
+        const { prompt } = await client.buildMessages([first, answer, next], 'user-2', {}, {});
+        return prompt.map((message) => message.content);
+      };
+
+      beforeEach(() => {
+        mockReq.body.timezone = 'America/Sao_Paulo';
+        mockReq.turnStartedAt = Date.parse('2026-10-30T12:50:00.000Z');
+        first = {
+          messageId: 'user-1',
+          parentMessageId: null,
+          sender: 'User',
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'First question',
+          createdAt: '2026-10-26T09:00:00.000Z',
+          files: [banner],
+        };
+        answer = {
+          messageId: 'assistant-1',
+          parentMessageId: 'user-1',
+          sender: 'Assistant',
+          role: 'assistant',
+          isCreatedByUser: false,
+          text: 'Answer',
+          createdAt: '2026-10-26T09:00:05.000Z',
+          files: [{ file_id: 'f9', filename: 'generated.png', type: 'image/png' }],
+        };
+        next = {
+          messageId: 'user-2',
+          parentMessageId: 'assistant-1',
+          sender: 'User',
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Next question',
+        };
+      });
+
+      it("lists the files each user message carried, never an answer's", async () => {
+        mockReq.config.endpoints = { [EModelEndpoint.agents]: { promptAttachedFiles: true } };
+
+        await expect(promptContents()).resolves.toEqual([
+          `${listed}First question`,
+          'Answer',
+          'Next question',
+        ]);
+      });
+
+      it('lists the files in the same block as the send time', async () => {
+        mockReq.config.endpoints = {
+          [EModelEndpoint.agents]: { promptMessageTimestamps: true, promptAttachedFiles: true },
+        };
+
+        await expect(promptContents()).resolves.toEqual([
+          '<context_update>\nMessage sent: 2026-10-26 06:00:00 -03:00 (Monday)\nTime zone: America/Sao_Paulo\nAttached file: "banner.png" (image/png), id f1\n</context_update>\n\nFirst question',
+          'Answer',
+          '<context_update>\nMessage sent: 2026-10-30 09:50:00 -03:00 (Friday)\nTime zone: America/Sao_Paulo\n</context_update>\n\nNext question',
+        ]);
+      });
+
+      it('lists the files attached on this turn, beside the image the model sees', async () => {
+        mockReq.config.endpoints = { [EModelEndpoint.agents]: { promptAttachedFiles: true } };
+        const photo = {
+          user: 'user-123',
+          file_id: 'f2',
+          filename: 'photo.png',
+          filepath: '/images/user-123/f2__photo.png',
+          object: 'file',
+          type: 'image/png',
+          bytes: 1024,
+          embedded: false,
+          usage: 0,
+          source: 'local',
+          width: 64,
+          height: 64,
+        };
+        const imageUrl = { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } };
+        client.options.attachments = Promise.resolve([photo]);
+        client.addFileContextToMessage = jest.fn();
+        client.processAttachments = jest.fn(async (message, files) => {
+          message.image_urls = [imageUrl];
+          return files;
+        });
+
+        const [, , current] = await promptContents();
+
+        expect(current).toEqual([
+          {
+            type: 'text',
+            text: '<context_update>\nAttached file: "photo.png" (image/png), id f2\n</context_update>\n\nNext question',
+          },
+          imageUrl,
+        ]);
+      });
+
+      it('lists only the files the turn kept for the model', async () => {
+        mockReq.config.endpoints = { [EModelEndpoint.agents]: { promptAttachedFiles: true } };
+        client.message_file_map = { 'user-1': [] };
+
+        await expect(promptContents()).resolves.toEqual([
+          'First question',
+          'Answer',
+          'Next question',
+        ]);
+      });
+
+      it('lists nothing when the setting is off', async () => {
+        await expect(promptContents()).resolves.toEqual([
+          'First question',
+          'Answer',
+          'Next question',
+        ]);
+      });
+    });
+
     describe('promptMessageTimestamps', () => {
       /** Fresh rows per test: buildMessages records token counts on the rows it reads. */
       let first;
