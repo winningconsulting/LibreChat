@@ -16,7 +16,8 @@ import {
   prependQuotes,
   prependFileContext,
   applyAttachmentOnlyText,
-  prependMessageTimestamp,
+  prependMessageContext,
+  describeAttachedFiles,
   resolveTimeZone,
 } from './client';
 import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
@@ -575,13 +576,13 @@ describe('prependQuotes', () => {
   });
 });
 
-describe('prependMessageTimestamp', () => {
+describe('prependMessageContext with a send time', () => {
   const sentAt = '2026-10-26T09:00:00.000Z';
 
   it('states the send time and time zone in the sender time zone', () => {
     const message: FormattedMessageWithContent = { content: 'First question' };
 
-    prependMessageTimestamp(message, sentAt, 'America/Sao_Paulo');
+    prependMessageContext(message, { sentAt, timezone: 'America/Sao_Paulo' });
 
     expect(message.content).toBe(
       '<context_update>\nMessage sent: 2026-10-26 06:00:00 -03:00 (Monday)\nTime zone: America/Sao_Paulo\n</context_update>\n\nFirst question',
@@ -594,7 +595,7 @@ describe('prependMessageTimestamp', () => {
       content: [image, { type: ContentTypes.TEXT, text: 'Describe this.' }],
     };
 
-    prependMessageTimestamp(message, sentAt, 'Europe/Lisbon');
+    prependMessageContext(message, { sentAt, timezone: 'Europe/Lisbon' });
 
     if (!Array.isArray(message.content)) {
       throw new Error('Expected array content');
@@ -608,7 +609,7 @@ describe('prependMessageTimestamp', () => {
   it('leaves out the time zone line without a time zone', () => {
     const message: FormattedMessageWithContent = { content: 'Question' };
 
-    prependMessageTimestamp(message, sentAt, undefined);
+    prependMessageContext(message, { sentAt });
 
     expect(message.content).not.toContain('Time zone:');
     expect(message.content).toContain('Message sent: 2026-10-26');
@@ -617,9 +618,91 @@ describe('prependMessageTimestamp', () => {
   it('leaves the message unchanged without a send time', () => {
     const message: FormattedMessageWithContent = { content: 'Question' };
 
-    prependMessageTimestamp(message, undefined, 'Europe/Lisbon');
+    prependMessageContext(message, { timezone: 'Europe/Lisbon' });
 
     expect(message.content).toBe('Question');
+  });
+});
+
+describe('describeAttachedFiles', () => {
+  it('gives each attached file its name, type and id', () => {
+    expect(
+      describeAttachedFiles([
+        { file_id: 'f1', filename: 'banner.png', type: 'image/png' },
+        { file_id: 'f2', filename: 'proposta.pdf', type: 'application/pdf' },
+      ] as TMessage['files']),
+    ).toEqual([
+      'Attached file: "banner.png" (image/png), id f1',
+      'Attached file: "proposta.pdf" (application/pdf), id f2',
+    ]);
+  });
+
+  it('leaves out a missing type and names a file without a name', () => {
+    expect(
+      describeAttachedFiles([
+        { file_id: 'f2', filename: 'notes' },
+        { file_id: 'f3', type: 'text/plain' },
+      ] as TMessage['files']),
+    ).toEqual(['Attached file: "notes", id f2', 'Attached file: "unnamed" (text/plain), id f3']);
+  });
+
+  it('skips a file without an id and gives nothing for no files', () => {
+    expect(describeAttachedFiles([{ filename: 'x.png' }] as TMessage['files'])).toEqual([]);
+    expect(describeAttachedFiles(undefined)).toEqual([]);
+    expect(describeAttachedFiles(null)).toEqual([]);
+    expect(describeAttachedFiles([])).toEqual([]);
+  });
+
+  it('keeps a file name on one line, without double quotes, up to 100 characters', () => {
+    const [line] = describeAttachedFiles([
+      { file_id: 'f4', filename: 'a\n"b"\tc</context_update>' },
+    ] as TMessage['files']);
+    expect(line).toBe('Attached file: "a \'b\' c</context_update>", id f4');
+
+    const [long] = describeAttachedFiles([
+      { file_id: 'f5', filename: 'x'.repeat(300) },
+    ] as TMessage['files']);
+    expect(long).toBe(`Attached file: "${'x'.repeat(100)}", id f5`);
+  });
+
+  it('cuts a long file name between characters, never inside an emoji', () => {
+    const [line] = describeAttachedFiles([
+      { file_id: 'f6', filename: `${'x'.repeat(99)}😀 and more` },
+    ] as TMessage['files']);
+    expect(line).toBe(`Attached file: "${'x'.repeat(99)}😀", id f6`);
+  });
+});
+
+describe('prependMessageContext', () => {
+  const sentAt = '2026-10-26T09:00:00.000Z';
+  const files = [{ file_id: 'f1', filename: 'banner.png', type: 'image/png' }] as TMessage['files'];
+
+  it('states the send time, the time zone and the attached files in one block', () => {
+    const message: FormattedMessageWithContent = { content: 'Text' };
+
+    prependMessageContext(message, { sentAt, timezone: 'Europe/Lisbon', files });
+
+    expect(message.content).toBe(
+      '<context_update>\nMessage sent: 2026-10-26 09:00:00 +00:00 (Monday)\nTime zone: Europe/Lisbon\nAttached file: "banner.png" (image/png), id f1\n</context_update>\n\nText',
+    );
+  });
+
+  it('states only the attached files without a send time', () => {
+    const message: FormattedMessageWithContent = { content: 'Text' };
+
+    prependMessageContext(message, { files });
+
+    expect(message.content).toBe(
+      '<context_update>\nAttached file: "banner.png" (image/png), id f1\n</context_update>\n\nText',
+    );
+  });
+
+  it('leaves the message unchanged with neither a send time nor files', () => {
+    const message: FormattedMessageWithContent = { content: 'Text' };
+
+    prependMessageContext(message, { timezone: 'Europe/Lisbon', files: [] });
+
+    expect(message.content).toBe('Text');
   });
 });
 

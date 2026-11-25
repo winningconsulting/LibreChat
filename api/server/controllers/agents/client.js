@@ -145,7 +145,7 @@ const {
   prependFileContext,
   prependQuotes,
   applyAttachmentOnlyText,
-  prependMessageTimestamp,
+  prependMessageContext,
   resolveTimeZone,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
@@ -2641,23 +2641,26 @@ class AgentClient extends BaseClient {
     /**
      * With `promptMessageTimestamps`, every user message states when it was sent,
      * in the sender's time zone, so the model knows the date and time without
-     * either living in the system prompt. Applied last, after the attachment-only
-     * text, so a turn with only files keeps that text under its timestamp.
+     * either living in the system prompt. With `promptAttachedFiles`, it also
+     * lists the files it carried, with name, type and id, so the model can tell a
+     * tool which one the person means. Applied last, after the attachment-only
+     * text, so a turn with only files keeps that text under this block.
      */
-    const stampsMessages =
-      this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.promptMessageTimestamps === true;
+    const agentsConfig = this.options.req.config?.endpoints?.[EModelEndpoint.agents];
+    const stampsMessages = agentsConfig?.promptMessageTimestamps === true;
+    const listsFiles = agentsConfig?.promptAttachedFiles === true;
     const stampTimeZone = stampsMessages
       ? resolveTimeZone(this.options.req.body?.timezone)
       : undefined;
-    const stampSendTime = (formattedMessage, message) => {
-      if (!stampsMessages || message.isCreatedByUser !== true) {
+    const stampMessageContext = (formattedMessage, message, files) => {
+      if ((!stampsMessages && !listsFiles) || message.isCreatedByUser !== true) {
         return;
       }
-      prependMessageTimestamp(
-        formattedMessage,
-        message.createdAt ?? this.options.req.turnStartedAt,
-        stampTimeZone,
-      );
+      prependMessageContext(formattedMessage, {
+        sentAt: stampsMessages ? (message.createdAt ?? this.options.req.turnStartedAt) : undefined,
+        timezone: stampTimeZone,
+        files: listsFiles ? files : undefined,
+      });
     };
     /**
      * Rebuilds the memory-side copy of one source row: the same formatting and
@@ -2682,7 +2685,7 @@ class AgentClient extends BaseClient {
       }
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(memoryFormattedMessage, turnFiles);
-      stampSendTime(memoryFormattedMessage, message);
+      stampMessageContext(memoryFormattedMessage, message, turnFiles);
       return memoryFormattedMessage;
     };
     /** Memory copies built for canonical recounts, reused by the memory payload pass. */
@@ -2734,7 +2737,7 @@ class AgentClient extends BaseClient {
        */
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
-      stampSendTime(formattedMessage, message);
+      stampMessageContext(formattedMessage, message, turnFiles);
 
       /**
        * A summarize round that errored or was cut off never reaches the model:

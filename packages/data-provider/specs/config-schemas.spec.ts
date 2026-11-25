@@ -532,6 +532,14 @@ describe('endpointSchema addParams validation', () => {
 });
 
 describe('agentsEndpointSchema', () => {
+  it('keeps promptAttachedFiles, off unless set', () => {
+    expect(agentsEndpointSchema.parse({}).promptAttachedFiles).toBeUndefined();
+    expect(agentsEndpointSchema.parse({ promptAttachedFiles: true }).promptAttachedFiles).toBe(
+      true,
+    );
+    expect(agentsEndpointSchema.safeParse({ promptAttachedFiles: 'yes' }).success).toBe(false);
+  });
+
   it('keeps promptMessageTimestamps, off unless set', () => {
     expect(agentsEndpointSchema.parse({}).promptMessageTimestamps).toBeUndefined();
     expect(
