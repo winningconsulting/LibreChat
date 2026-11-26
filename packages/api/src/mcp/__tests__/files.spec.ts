@@ -64,7 +64,9 @@ describe('file transfers', () => {
     const off = formatMCPServerTools('images', listed);
     const on = formatMCPServerTools('images', listed, { fileTransfers: true });
     const items = (tools: ReturnType<typeof formatMCPServerTools>, key: string) => {
-      const images = tools[key].function.parameters.properties?.images as {
+      const tool = tools[key];
+      if (!tool) throw new Error(`missing ${key}`);
+      const images = tool.function.parameters.properties?.images as {
         items?: { type?: string };
       };
       return images.items?.type;
