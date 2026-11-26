@@ -72,6 +72,36 @@ describe('MCPOptionsSchema', () => {
       }
     });
 
+    it('accepts fileTransfers only from operator config', () => {
+      const on = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        fileTransfers: true,
+      });
+      expect(on.success).toBe(true);
+      if (on.success) {
+        expect(on.data.fileTransfers).toBe(true);
+      }
+      const omitted = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+      });
+      expect(omitted.success).toBe(true);
+      if (omitted.success) {
+        expect(omitted.data.fileTransfers).toBeUndefined();
+      }
+      const user = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        fileTransfers: true,
+      });
+      expect(user.success).toBe(true);
+      if (user.success) {
+        expect('fileTransfers' in user.data).toBe(false);
+      }
+      expect(MCP_USER_INPUT_FIELDS.has('fileTransfers')).toBe(false);
+    });
+
     it('is omitted from user input schema', () => {
       const result = MCPServerUserInputSchema.safeParse({
         type: 'sse',
