@@ -58,18 +58,19 @@ describe('file transfers', () => {
   });
 
   it('leaves the schema unchanged for the model when the server flag is off', () => {
-    const off = formatMCPServerTools('images', [
+    const listed = [
       { name: 'create_image', description: 'Makes an image', inputSchema: schema },
-    ]);
-    const on = formatMCPServerTools(
-      'images',
-      [{ name: 'create_image', description: 'Makes an image', inputSchema: schema }],
-      { fileTransfers: true },
-    );
-    const offImages = off['create_image_mcp_images'].function.parameters.properties?.images;
-    const onImages = on['create_image_mcp_images'].function.parameters.properties?.images;
-    expect(offImages.items.type).toBe('object');
-    expect(onImages.items.type).toBe('string');
+    ] as Parameters<typeof formatMCPServerTools>[1];
+    const off = formatMCPServerTools('images', listed);
+    const on = formatMCPServerTools('images', listed, { fileTransfers: true });
+    const items = (tools: ReturnType<typeof formatMCPServerTools>, key: string) => {
+      const images = tools[key].function.parameters.properties?.images as {
+        items?: { type?: string };
+      };
+      return images.items?.type;
+    };
+    expect(items(off, 'create_image_mcp_images')).toBe('object');
+    expect(items(on, 'create_image_mcp_images')).toBe('string');
   });
 
   it('uploads the bytes out of band and downloads the result without storing them in the call', async () => {

@@ -2042,11 +2042,12 @@ Please follow these instructions when using tools from the respective MCP server
             connection!.getOAuthCredentialSetId?.() ?? null,
             true,
           );
+          const client = connection!.client;
           const sendCall = (args: Record<string, unknown>, requestState?: string) =>
             withMCPRequestSignal(
               options?.signal,
               (signal) =>
-                connection!.client.request(
+                client.request(
                   {
                     method: 'tools/call',
                     params: {
@@ -2058,7 +2059,7 @@ Please follow these instructions when using tools from the respective MCP server
                         ? { _meta: fileTransferRequestMeta() }
                         : {}),
                     },
-                  } as Parameters<typeof connection.client.request>[0],
+                  } as Parameters<typeof client.request>[0],
                   CallToolResultSchema,
                   {
                     timeout: connection!.timeout,
