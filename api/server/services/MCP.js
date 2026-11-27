@@ -61,6 +61,7 @@ const {
   ScheduledMCPPolicyError,
 } = require('@librechat/api');
 const { persistResourceBlobs } = require('~/server/services/MCP/persistResourceBlobs');
+const { readTransferFiles } = require('~/server/services/MCP/readTransferFiles');
 const {
   Time,
   CacheKeys,
@@ -1361,6 +1362,7 @@ function createToolInstance({
 
       const requestBody = config?.configurable?.requestBody ?? capturedRequestBody;
       const shouldPersistResourceBlobs = capturedServerConfig?.persistResourceBlobs === true;
+      const shouldTransferFiles = capturedServerConfig?.fileTransfers === true;
       const persistReq = res?.req;
       /**
        * The upstream-token closure is built at the request boundary (where
@@ -1419,7 +1421,7 @@ function createToolInstance({
           upstreamTokenProviderResolver: capturedUpstreamTokenProviderResolver,
           oboIdentityContext: capturedOboIdentityContext,
           mcpApps: capturedMCPApps,
-          ...(shouldPersistResourceBlobs
+          ...(shouldPersistResourceBlobs || shouldTransferFiles
             ? {
                 persistResourceBlobs,
                 resourcePersistContext: persistReq
@@ -1433,6 +1435,12 @@ function createToolInstance({
                       toolCallId: config?.toolCall?.id ?? config?.toolCall?.tool_call_id,
                     }
                   : undefined,
+              }
+            : {}),
+          ...(shouldTransferFiles
+            ? {
+                readTransferFiles: (fileIds) =>
+                  readTransferFiles({ userId, fileIds, req: persistReq }),
               }
             : {}),
         }),

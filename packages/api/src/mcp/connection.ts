@@ -57,6 +57,7 @@ import { runOutsideTracing } from '~/utils/tracing';
 import { MCPRequestQuiescedError } from './request';
 import { isOwnedAbortError } from '~/utils/errors';
 import { mediaTypeEssence } from '~/utils/headers';
+import { fileTransferRequestMeta } from './files';
 import { isAddressAllowed } from '~/auth/domain';
 import { awaitOboOperation } from './oauth/obo';
 import { withTimeout } from '~/utils/promise';
@@ -1150,6 +1151,8 @@ export class MCPConnection extends EventEmitter {
   private toolListRefreshEpoch = 0;
   private toolListRefreshSuspended = false;
   private suspendedToolListSnapshot?: MCPToolsSnapshot;
+  /** Latest tools/list page set, so a tool call can read file-argument schemas. */
+  private listedTools: MCPListToolsResult['tools'] | undefined;
   private publishedToolListSnapshot: {
     epoch: number;
     generation: number;
@@ -2870,12 +2873,17 @@ export class MCPConnection extends EventEmitter {
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
     let totalBytes = 0;
-    const snapshot = (complete: boolean, authenticationError?: unknown): MCPToolsSnapshot => ({
-      tools: allTools,
-      complete,
-      ...(authenticationError != null && { authenticationError }),
-      ...ordering,
-    });
+    const snapshot = (complete: boolean, authenticationError?: unknown): MCPToolsSnapshot => {
+      if (allTools.length) {
+        this.listedTools = allTools;
+      }
+      return {
+        tools: allTools,
+        complete,
+        ...(authenticationError != null && { authenticationError }),
+        ...ordering,
+      };
+    };
 
     for (let page = 1; page <= maxPages; page++) {
       const exhaustedBudget = getToolsListBudgetExceededReason(
@@ -3108,19 +3116,41 @@ export class MCPConnection extends EventEmitter {
     );
   }
 
+  /** The input schema tools/list published for this tool, when this connection has one. */
+  public inputSchemaFor(toolName: string): Record<string, unknown> | undefined {
+    const tools =
+      this.publishedToolListSnapshot?.tools ??
+      this.suspendedToolListSnapshot?.tools ??
+      this.listedTools;
+    const schema = tools?.find((tool) => tool.name === toolName)?.inputSchema;
+    return schema && typeof schema === 'object' ? (schema as Record<string, unknown>) : undefined;
+  }
+
   /** Fetches one `tools/list` page. The public snapshot interface classifies any rejection. */
   private async listToolsPage(
     cursor: string | undefined,
     timeoutMs: number,
     signal?: AbortSignal,
   ): Promise<MCPListToolsResult> {
+    const params: { cursor?: string; _meta?: Record<string, unknown> } = {};
+    if (cursor != null) {
+      params.cursor = cursor;
+    }
+    if (this.options.fileTransfers === true) {
+      params._meta = fileTransferRequestMeta();
+    }
     try {
       return await this.withRequestSignal(signal, (requestSignal) =>
-        this.client.listTools(cursor != null ? { cursor } : undefined, {
-          timeout: timeoutMs,
-          maxTotalTimeout: timeoutMs,
-          signal: requestSignal,
-        }),
+        this.client.listTools(
+          (Object.keys(params).length ? params : undefined) as Parameters<
+            typeof this.client.listTools
+          >[0],
+          {
+            timeout: timeoutMs,
+            maxTotalTimeout: timeoutMs,
+            signal: requestSignal,
+          },
+        ),
       );
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');

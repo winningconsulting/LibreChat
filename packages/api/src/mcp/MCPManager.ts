@@ -62,6 +62,7 @@ import {
   type MCPAppRuntimeTarget,
 } from './apps/binding';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
+import { callToolWithFileTransfers, fileTransferRequestMeta, type TransferFile } from './files';
 import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { extractAndValidateResourceBlobs, STORED_FILES_ARTIFACT_KEY } from './resources';
@@ -1551,6 +1552,7 @@ Please follow these instructions when using tools from the respective MCP server
     unattended,
     persistResourceBlobs,
     resourcePersistContext,
+    readTransferFiles,
   }: {
     /** See {@link t.UserConnectionContext.unattended}. */
     unattended?: boolean;
@@ -1583,6 +1585,8 @@ Please follow these instructions when using tools from the respective MCP server
     /** Injected storage callback — only used when the server opts in via config */
     persistResourceBlobs?: PersistResourceBlobs;
     resourcePersistContext?: Omit<ResourceBlobPersistContext, 'userId' | 'tenantId'>;
+    /** Reads attachment bytes for a server that transfers files out of band. */
+    readTransferFiles?: (fileIds: string[]) => Promise<Map<string, TransferFile>>;
   }): Promise<t.FormattedToolResponse> {
     if (scheduledBearerInvocation) requestScopedConnections = scheduledBearerInvocation.context;
     const userId = user?.id;
@@ -2002,6 +2006,9 @@ Please follow these instructions when using tools from the respective MCP server
           }
         }
 
+        let transferredDownloads: Awaited<
+          ReturnType<typeof callToolWithFileTransfers>
+        >['downloads'] = [];
         const requestTool = async () => {
           if (isScheduledMCPBearer(requestScopedConnections) && directBearerRecovery) {
             if (!scheduledBearerInvocation)
@@ -2035,27 +2042,47 @@ Please follow these instructions when using tools from the respective MCP server
             connection!.getOAuthCredentialSetId?.() ?? null,
             true,
           );
-          return withMCPRequestSignal(
-            options?.signal,
-            (signal) =>
-              connection!.client.request(
-                {
-                  method: 'tools/call',
-                  params: {
-                    name: toolName,
-                    arguments: toolArguments,
+          const client = connection!.client;
+          const sendCall = (args: Record<string, unknown>, requestState?: string) =>
+            withMCPRequestSignal(
+              options?.signal,
+              (signal) =>
+                client.request(
+                  {
+                    method: 'tools/call',
+                    params: {
+                      name: toolName,
+                      arguments: args,
+                      // requestState is an extension field the SDK's tools/call type does not list.
+                      ...(requestState ? { requestState } : {}),
+                      ...(rawConfig?.fileTransfers === true
+                        ? { _meta: fileTransferRequestMeta() }
+                        : {}),
+                    },
+                  } as Parameters<typeof client.request>[0],
+                  CallToolResultSchema,
+                  {
+                    timeout: connection!.timeout,
+                    resetTimeoutOnProgress: true,
+                    ...options,
+                    signal,
                   },
-                },
-                CallToolResultSchema,
-                {
-                  timeout: connection!.timeout,
-                  resetTimeoutOnProgress: true,
-                  ...options,
-                  signal,
-                },
-              ),
-            isScheduledMCPBearer(requestScopedConnections) && directBearerRecovery,
-          );
+                ),
+              isScheduledMCPBearer(requestScopedConnections) && directBearerRecovery,
+            );
+          if (rawConfig?.fileTransfers !== true) {
+            return sendCall(toolArguments ?? {});
+          }
+          const exchanged = await callToolWithFileTransfers({
+            mcpUrl: connection!.url,
+            schema: connection!.inputSchemaFor(toolName),
+            toolArguments,
+            signal: options?.signal,
+            readFiles: (fileIds) => readTransferFiles?.(fileIds) ?? Promise.resolve(new Map()),
+            send: sendCall,
+          });
+          transferredDownloads = exchanged.downloads;
+          return exchanged.result;
         };
 
         // Deliberately use `request`: the typed wrapper also enforces the tool's output schema and
@@ -2317,7 +2344,8 @@ Please follow these instructions when using tools from the respective MCP server
           toolResult?.isError === true,
         );
 
-        if (!extractedBlobs?.resources.length || !persistResourceBlobs) {
+        const resources = [...(extractedBlobs?.resources ?? []), ...transferredDownloads];
+        if (!resources.length || !persistResourceBlobs) {
           return formatted;
         }
 
@@ -2328,7 +2356,7 @@ Please follow these instructions when using tools from the respective MCP server
           );
         }
 
-        const storedFiles = await persistResourceBlobs(extractedBlobs.resources, {
+        const storedFiles = await persistResourceBlobs(resources, {
           ...resourcePersistContext,
           userId,
           tenantId: user?.tenantId,

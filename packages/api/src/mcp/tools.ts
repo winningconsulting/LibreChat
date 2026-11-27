@@ -17,6 +17,7 @@ import { assertToolApprovalExecution, withToolApprovalTransport } from '~/tools/
 import { canUseAppConnection, requiresEphemeralUserConnection } from './utils';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from './zod';
 import { STANDARD_MCP_CAPABILITY_PROFILE } from './capabilities';
+import { presentFileArguments, type JsonSchema } from './files';
 import { getMCPToolCatalogGeneration } from './toolsChanged';
 import { isMCPToolResultError } from './status';
 import { isToolHiddenFromModel } from './apps';
@@ -148,7 +149,11 @@ export interface MCPToolCacheService {
 }
 
 /** Converts an MCP tools/list response into LibreChat's server-qualified catalog format. */
-export function formatMCPServerTools(serverName: string, tools: MCPToolInput[]): LCAvailableTools {
+export function formatMCPServerTools(
+  serverName: string,
+  tools: MCPToolInput[],
+  options?: { fileTransfers?: boolean },
+): LCAvailableTools {
   const serverTools: LCAvailableTools = {};
   const keyServerName = normalizeServerName(serverName);
   const keyToolNames = stripServerNamePrefixes(
@@ -167,7 +172,13 @@ export function formatMCPServerTools(serverName: string, tools: MCPToolInput[]):
         name,
         description: tool.description ?? '',
         parameters: tool.inputSchema
-          ? (normalizeJsonSchema(resolveJsonSchemaRefs(tool.inputSchema)) as JsonSchemaType)
+          ? (normalizeJsonSchema(
+              resolveJsonSchemaRefs(
+                options?.fileTransfers
+                  ? presentFileArguments(tool.inputSchema as JsonSchema)
+                  : tool.inputSchema,
+              ),
+            ) as JsonSchemaType)
           : ({ type: 'object', properties: {} } as JsonSchemaType),
       },
     };
@@ -325,7 +336,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         return {};
       }
       /** Cache keys are model-facing and must match runtime tool instance names. */
-      const serverTools = formatMCPServerTools(serverName, tools);
+      const serverTools = formatMCPServerTools(serverName, tools, {
+        fileTransfers: serverConfig?.fileTransfers === true,
+      });
 
       const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
       const configGeneration = resolvedConfig
