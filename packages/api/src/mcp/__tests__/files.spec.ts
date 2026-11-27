@@ -1,6 +1,7 @@
 import {
   callToolWithFileTransfers,
   fileTransferRequestMeta,
+  describeStoredFiles,
   presentFileArguments,
   resolveTransferUrl,
   type JsonSchema,
@@ -37,6 +38,13 @@ function file(id: string): TransferFile {
 }
 
 describe('file transfers', () => {
+  it('names a stored file by its id and leaves the bytes out', () => {
+    expect(
+      describeStoredFiles([{ file_id: 'f1', filename: 'w-image-img_abc.png', type: 'image/png' }]),
+    ).toBe('Attached file: "w-image-img_abc.png" (image/png), id f1');
+    expect(describeStoredFiles([{ filename: 'no-id.png' }])).toBe('');
+  });
+
   it('declares the extension without putting bytes in the declaration', () => {
     expect(JSON.stringify(fileTransferRequestMeta())).not.toContain('base64');
     expect(fileTransferRequestMeta()).toEqual({

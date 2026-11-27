@@ -65,6 +65,20 @@ export type ToolCallResult = {
   [key: string]: unknown;
 };
 
+/** Lines the model can pass back, one per file this call stored. Ids, never bytes. */
+export function describeStoredFiles(
+  files: { file_id?: string; filename?: string; type?: string }[],
+): string {
+  return files
+    .filter((file) => file.file_id)
+    .map((file) => {
+      const name = (file.filename || 'file').replace(/["\n\r]/g, ' ').slice(0, 100);
+      const type = file.type ? ` (${file.type})` : '';
+      return `Attached file: "${name}"${type}, id ${file.file_id}`;
+    })
+    .join('\n');
+}
+
 export function fileTransferRequestMeta(): Record<string, unknown> {
   return {
     'io.modelcontextprotocol/clientCapabilities': {
@@ -418,7 +432,7 @@ export async function callToolWithFileTransfers(options: {
     if (missing) {
       return {
         result: failed(
-          `No attached file with id ${missing}. Use an id from an Attached file line.`,
+          `No attached file with id ${missing}. Use an id from an Attached file line; if there is none, ask the person to attach the image again. Do not make a new image in its place.`,
         ),
         downloads: [],
       };
