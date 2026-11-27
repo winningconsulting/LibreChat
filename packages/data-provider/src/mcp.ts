@@ -295,6 +295,12 @@ const BaseOptionsSchema = z.object({
    */
   persistResourceBlobs: z.boolean().optional(),
   /**
+   * When true, this server may receive and return files through the
+   * `io.modelcontextprotocol/files` extension. Bytes stay out of the tool
+   * arguments and the tool result. Default: false. Operator config only.
+   */
+  fileTransfers: z.boolean().optional(),
+  /**
    * Whether this server requires OAuth authentication
    * If not specified, will be auto-detected during construction
    */
@@ -590,6 +596,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     chatMenu: true,
     serverInstructions: true,
     persistResourceBlobs: true,
+    fileTransfers: true,
     requiresOAuth: true,
     oauthPrompt: true,
     oauthToolCatalog: true,
