@@ -61,8 +61,13 @@ import {
   type MCPAppBindingSubject,
   type MCPAppRuntimeTarget,
 } from './apps/binding';
+import {
+  callToolWithFileTransfers,
+  describeStoredFiles,
+  fileTransferRequestMeta,
+  type TransferFile,
+} from './files';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
-import { callToolWithFileTransfers, fileTransferRequestMeta, type TransferFile } from './files';
 import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { extractAndValidateResourceBlobs, STORED_FILES_ARTIFACT_KEY } from './resources';
@@ -2362,10 +2367,12 @@ Please follow these instructions when using tools from the respective MCP server
           tenantId: user?.tenantId,
         });
         const [text, artifacts] = formatted;
+        const named = describeStoredFiles(storedFiles.slice(-transferredDownloads.length));
+        const shown = named && typeof text === 'string' ? `${text}\n${named}` : text;
 
         return markMCPToolResultError(
           [
-            text,
+            shown,
             {
               ...artifacts,
               [STORED_FILES_ARTIFACT_KEY]: storedFiles,
